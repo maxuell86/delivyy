@@ -1,0 +1,22 @@
+{
+"name":"Max hamburguer",
+"short_name":"Max",
+"description":"Peça hambúrguer online em Tangará da Serra com entrega rápida — cardápio, carrinho e pedido direto pelo WhatsApp.",
+"display":"standalone",
+"start_url":"./",
+"scope":"./",
+"background_color":"#111",
+"theme_color":"#d32f2f",
+"icons":[
+{
+"src":"imagens/icons/icon-192.png",
+"sizes":"192x192",
+"type":"image/png"
+},
+{
+"src":"imagens/icons/icon-512.png",
+"sizes":"512x512",
+"type":"image/png"
+}
+]
+}

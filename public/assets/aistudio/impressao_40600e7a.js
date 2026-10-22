@@ -1,0 +1,5 @@
+function imprimir(){
+
+window.print();
+
+}

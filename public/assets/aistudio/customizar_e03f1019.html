@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Personalizar app</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Montserrat:wght@700;800;900&display=swap">
+<style>
+/* =============================================
+   PAINEL DO LOJISTA (customizar.html)
+   Estilo proprio, independente do tema do app.
+============================================= */
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+:root{
+    --laranja:#ff9800; --grad-inicio:#ff6600; --laranja-rgb:255,152,0;
+    --bg:#151515; --card:#1f1f1f; --item:#262626; --borda:#333;
+    --texto:#f1f1f1; --texto2:#9a9a9a;
+}
+body{ font-family:'Nunito',Arial,sans-serif; background:var(--bg); color:var(--texto); font-size:15px; line-height:1.45; }
+
+/* ---------- Portao de senha ---------- */
+.gate{
+    position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 30% 20%, #2a1a05, #111 65%); padding:20px;
+}
+.gate-box{
+    background:var(--card); border:1px solid var(--borda); border-radius:22px; padding:36px 26px;
+    width:100%; max-width:380px; text-align:center; box-shadow:0 24px 70px rgba(0,0,0,0.7);
+}
+.gate-logo{ font-size:44px; margin-bottom:8px; }
+.gate-box h1{ font-family:'Montserrat',sans-serif; font-size:20px; color:var(--laranja); margin-bottom:6px; }
+.gate-box p{ color:var(--texto2); font-size:13.5px; margin-bottom:22px; }
+.gate-box input{
+    width:100%; padding:14px; border-radius:12px; border:2px solid var(--borda); background:#181818;
+    color:var(--texto); font-size:16px; margin-bottom:12px; outline:none; font-family:inherit;
+}
+.gate-box input:focus{ border-color:var(--laranja); box-shadow:0 0 0 3px rgba(var(--laranja-rgb),0.18); }
+.gate-box button{
+    width:100%; padding:14px; border:none; border-radius:12px; cursor:pointer;
+    background:linear-gradient(135deg,var(--grad-inicio),var(--laranja)); color:#fff;
+    font-weight:900; font-size:16px; font-family:'Montserrat',sans-serif;
+}
+.gate-box button:hover{ filter:brightness(1.08); }
+.gate .voltar{ display:inline-block; margin-top:16px; color:var(--texto2); font-size:13px; text-decoration:none; }
+.gate .voltar:hover{ color:#fff; }
+#gateMsg{ color:#ff6b6b; font-size:13.5px; margin-top:10px; min-height:18px; }
+
+/* ---------- Estrutura do painel ---------- */
+header{
+    position:sticky; top:0; z-index:20; background:rgba(21,21,21,0.97); backdrop-filter:blur(6px);
+    border-bottom:1px solid var(--borda); padding:14px 18px 0;
+}
+.topo{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; max-width:1080px; margin:0 auto; }
+.topo h1{ font-family:'Montserrat',sans-serif; font-size:19px; }
+.acoes{ display:flex; flex-wrap:wrap; gap:8px; }
+.btn-salvar{
+    background:linear-gradient(135deg,var(--grad-inicio),var(--laranja)); color:#fff; border:none;
+    padding:11px 18px; border-radius:11px; font-weight:900; font-size:14.5px; cursor:pointer;
+    font-family:'Montserrat',sans-serif; box-shadow:0 4px 16px rgba(var(--laranja-rgb),0.35);
+}
+.btn-salvar:hover{ filter:brightness(1.08); }
+.btn-sec, .btn-link{
+    background:var(--item); color:var(--texto); border:1px solid var(--borda); padding:10px 16px;
+    border-radius:11px; font-weight:800; font-size:14px; cursor:pointer; text-decoration:none; font-family:inherit;
+    display:inline-block;
+}
+.btn-sec:hover, .btn-link:hover{ border-color:var(--laranja); color:var(--laranja); }
+.status{ max-width:1080px; margin:10px auto 0; font-size:13.5px; min-height:20px; padding:0 2px 8px; color:var(--texto2); }
+.status.ok{ color:#5ddc8b; }
+.status.erro{ color:#ff6b6b; }
+.status.aviso{ color:#ffd166; }
+.tabs{ display:flex; gap:4px; overflow-x:auto; max-width:1080px; margin:0 auto; scrollbar-width:none; }
+.tabs::-webkit-scrollbar{ display:none; }
+.tab{
+    background:transparent; border:none; border-bottom:3px solid transparent; color:var(--texto2);
+    padding:11px 14px; font-weight:800; font-size:14px; cursor:pointer; white-space:nowrap; font-family:inherit;
+}
+.tab:hover{ color:var(--texto); }
+.tab.ativa{ color:var(--laranja); border-bottom-color:var(--laranja); }
+
+main{ max-width:1080px; margin:0 auto; padding:22px 18px 90px; }
+.sec{ display:none; }
+.sec h2{ font-family:'Montserrat',sans-serif; font-size:20px; margin-bottom:14px; }
+.sec h3{ font-family:'Montserrat',sans-serif; font-size:16px; margin:26px 0 12px; color:var(--laranja); }
+.dica{ color:var(--texto2); font-size:13px; margin-bottom:14px; }
+
+.grid2{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
+.grid3{ display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; }
+
+.campo{ display:flex; flex-direction:column; gap:5px; margin-bottom:6px; }
+.campo span{ font-size:13px; font-weight:800; color:var(--texto2); }
+.campo small{ font-size:12px; color:#777; }
+.campo input[type=text], .campo input[type=number], .campo input[type=password], .campo textarea, .campo select{
+    width:100%; padding:11px 12px; border-radius:10px; border:2px solid var(--borda); background:#181818;
+    color:var(--texto); font-size:14.5px; outline:none; font-family:inherit;
+}
+.campo input:focus, .campo textarea:focus, .campo select:focus{ border-color:var(--laranja); }
+.campo input[type=color]{
+    width:100%; height:44px; padding:4px; border-radius:10px; border:2px solid var(--borda); background:#181818; cursor:pointer;
+}
+.campo textarea{ resize:vertical; min-height:70px; }
+.chk{ display:flex; align-items:center; gap:8px; font-weight:800; font-size:14.5px; cursor:pointer; padding:8px 0; }
+.chk input{ width:18px; height:18px; accent-color:var(--laranja); }
+
+.card-item{
+    background:var(--card); border:1px solid var(--borda); border-radius:16px; padding:16px; margin-bottom:14px;
+}
+.btn-add{
+    background:transparent; border:2px dashed var(--borda); color:var(--texto2); width:100%;
+    padding:13px; border-radius:13px; font-weight:800; cursor:pointer; font-size:14.5px; font-family:inherit;
+}
+.btn-add:hover{ border-color:var(--laranja); color:var(--laranja); }
+.btn-remover{
+    background:rgba(229,57,53,0.12); color:#ff8a80; border:1px solid rgba(229,57,53,0.4);
+    padding:10px 14px; border-radius:10px; font-weight:800; cursor:pointer; font-size:13.5px; margin-top:10px; font-family:inherit;
+}
+.btn-remover:hover{ background:rgba(229,57,53,0.25); }
+
+.linha-dia{ display:flex; flex-wrap:wrap; align-items:center; gap:14px; padding:9px 0; border-bottom:1px solid #262626; }
+.linha-dia .chk{ min-width:170px; padding:0; }
+.horas{ display:flex; align-items:center; gap:8px; color:var(--texto2); font-size:14px; }
+.horas input{
+    width:74px; padding:8px 10px; border-radius:9px; border:2px solid var(--borda); background:#181818;
+    color:var(--texto); font-size:14.5px; outline:none; font-family:inherit;
+}
+.horas input:focus{ border-color:var(--laranja); }
+
+/* ---------- Previa do tema ---------- */
+.preview{
+    --pv-primaria:#ff9800; --pv-esc:#e68900; --pv-clara:#ffcc00; --pv-grad:#ff6600;
+    --pv-preco:#00ff88; --pv-fundo:#111; --pv-card:#1f1f1f; --pv-item:#2a2a2a; --pv-raio:14px;
+    --pv-font:'Nunito',sans-serif; --pv-font-titulo:'Montserrat',sans-serif;
+    background:var(--pv-fundo); border:1px solid var(--borda); border-radius:18px; padding:16px;
+    display:flex; flex-direction:column; gap:12px; overflow:hidden;
+}
+.pv-topo{
+    font-family:var(--pv-font-titulo); font-weight:900; color:#000; text-align:center; padding:14px;
+    background:linear-gradient(135deg,var(--pv-grad),var(--pv-primaria),var(--pv-clara)); border-radius:calc(var(--pv-raio) * 0.85);
+}
+.pv-card{
+    background:var(--pv-card); border-radius:var(--pv-raio); padding:14px; display:flex;
+    flex-direction:column; gap:8px; font-family:var(--pv-font); color:#fff;
+}
+.pv-card b{ font-family:var(--pv-font-titulo); }
+.pv-preco{ color:var(--pv-preco); font-size:20px; font-weight:900; }
+.pv-btn{
+    background:linear-gradient(135deg,var(--pv-grad),var(--pv-primaria)); color:#fff; border:none; padding:13px;
+    border-radius:calc(var(--pv-raio) * 0.85); font-weight:900; font-size:15px; cursor:default; font-family:var(--pv-font-titulo);
+    box-shadow:0 5px 16px rgba(var(--laranja-rgb),0.35);
+}
+.pv-item{ background:var(--pv-item); border-radius:calc(var(--pv-raio) * 0.7); padding:10px 12px; font-size:13.5px; color:#ddd; }
+</style>
+</head>
+<body>
+
+<!-- ============ Portao de senha ============ -->
+<div id="gate" class="gate">
+    <div class="gate-box">
+        <div class="gate-logo">🎨</div>
+        <h1>Painel do Lojista</h1>
+        <p>Personalize o app de delivery sem mexer em código: marca, tema, horários, entrega, cupons e mais.</p>
+        <input type="password" id="gateSenha" placeholder="Senha do painel" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter') entrarPainel()">
+        <button onclick="entrarPainel()">Entrar</button>
+        <div id="gateMsg"></div>
+        <a class="voltar" href="index.html">← Voltar ao app</a>
+    </div>
+</div>
+
+<!-- ============ Painel ============ -->
+<div id="painel" style="display:none">
+    <header>
+        <div class="topo">
+            <h1 id="painelTitulo">🎨 Personalizar</h1>
+            <div class="acoes">
+                <a class="btn-link" href="index.html" target="_blank" rel="noopener">👁️ Ver app</a>
+                <button class="btn-sec" onclick="exportarConfig()">⬇️ Exportar config.js</button>
+                <button class="btn-salvar" onclick="salvarPainel()">💾 Salvar e publicar</button>
+            </div>
+        </div>
+        <div id="statusBar" class="status"></div>
+        <nav class="tabs" id="tabs"></nav>
+    </header>
+    <main>
+        <section id="secMarca" class="sec"></section>
+        <section id="secTema" class="sec"></section>
+        <section id="secHorarios" class="sec"></section>
+        <section id="secEntrega" class="sec"></section>
+        <section id="secFidelidade" class="sec"></section>
+        <section id="secBanners" class="sec"></section>
+        <section id="secIntegracoes" class="sec"></section>
+        <section id="secAvancado" class="sec"></section>
+    </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3" integrity="sha384-l8ah+VgaWtk1mvOe9VC+OirC6qHFF4yH7l7mKRidV9MSti3E9F463bMp6ZVN4kuC" crossorigin="anonymous"></script>
+<script src="config.js"></script>
+<script src="customizar.js"></script>
+
+</body>
+</html>

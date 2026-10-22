@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Sabore In Casa — Pizzaria Delivery em Belo Horizonte (Mantiqueira)</title>
+<meta name="description" content="Pizza de massa 100% integral em Belo Horizonte — cardápi de lanches, bebidas e combos com entrega no Bairro Mantiqueira e região. Pedido rápido direto pelo WhatsApp.">
+<link rel="canonical" href="https://saboreincasa.github.io/app-delivery-sabore-in-casa/">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Max hamburguer — Hamburgueria Delivery em Tangará da Serra (Jd Buritis)">
+<meta property="og:description" content="Hamburguer de qualidade, cardápio de lanches, bebidas e combos com entrega em Belo Horizonte. Peça pelo WhatsApp.">
+<meta property="og:url" content="https://saboreincasa.github.io/app-delivery-sabore-in-casa/">
+<meta property="og:image" content="https://saboreincasa.github.io/app-delivery-sabore-in-casa/imagens/capa.png">
+<meta property="og:locale" content="pt_BR">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="imagens/icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="imagens/icons/icon-512.png">
+<link rel="stylesheet" href="styles.css">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link id="fonteLink" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Montserrat:wght@700;800;900&display=swap">
+
+<script id="restaurantJsonLd" type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Restaurant",
+  "@id": "https://saboreincasa.github.io/app-delivery-sabore-in-casa/#restaurant",
+  "name": "Sabore In Casa",
+  "url": "https://saboreincasa.github.io/app-delivery-sabore-in-casa/",
+  "image": "https://saboreincasa.github.io/app-delivery-sabore-in-casa/imagens/capa.png",
+  "telephone": "+55 65 99695-3036",
+  "priceRange": "R$32 - R$170",
+  "servesCuisine": "Pizza",
+  "acceptsReservations": false,
+  "paymentAccepted": "PIX, Dinheiro, Cartão de Crédito/Débito",
+  "currenciesAccepted": "BRL",
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "Rua Maria de Lourdes da Cruz, 378 - Bairro Mantiqueira",
+    "addressLocality": "Belo Horizonte",
+    "addressRegion": "MG",
+    "addressCountry": "BR"
+  },
+  "areaServed": [
+    { "@type": "City", "name": "Belo Horizonte" },
+    { "@type": "City", "name": "Vespasiano" },
+    { "@type": "City", "name": "Ribeirão das Neves" },
+    { "@type": "City", "name": "Santa Luzia" },
+    { "@type": "City", "name": "Contagem" }
+  ],
+  "openingHoursSpecification": [
+    {
+      "@type": "OpeningHoursSpecification",
+      "dayOfWeek": ["Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+      "opens": "18:00",
+      "closes": "23:59"
+    }
+  ]
+}
+</script>
+
+<!-- Config central do restaurante (template white-label): edite config.js
+     ou use o painel customizar.html. O loader mescla tudo e aplica. -->
+<script src="config.js"></script>
+<script src="config-loader.js"></script>
+
+<style>
+#toast {
+    visibility: hidden;
+    min-width: 250px;
+    background-color: #333;
+    color: #fff;
+    text-align: center;
+    border-radius: 8px;
+    padding: 12px;
+    position: fixed;
+    bottom: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.5s, bottom 0.5s;
+}
+#toast.show {
+    visibility: visible;
+    opacity: 1;
+    bottom: 80px;
+}
+
+/* 🔥 NOVO ESTILO DO ENDEREÇO */
+.endereco-box{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    margin-bottom:10px;
+}
+
+.endereco-box input{
+    width:100%;
+    padding:15px 16px;
+    border-radius:14px;
+    border:2px solid #444;
+    background:#fff;
+    color:#111;
+    font-size:16px;
+    font-weight:600;
+    font-family:'Nunito', sans-serif;
+    outline:none;
+    transition:border-color 0.2s, box-shadow 0.2s;
+}
+.endereco-box input::placeholder{ color:#999; font-weight:500; }
+.endereco-box input:focus{ border-color:var(--laranja); box-shadow:0 0 0 3px rgba(var(--laranja-rgb),0.2); }
+
+#bairroSelecionado{
+    background:#fff;
+    cursor:pointer;
+}
+
+.troco-label{
+    font-family:'Montserrat', sans-serif;
+    font-size:15px;
+    font-weight:700;
+    color:#ccc;
+    display:block;
+    margin:14px 0 8px;
+}
+#troco{
+    width:100%;
+    padding:15px 16px;
+    border-radius:14px;
+    border:2px solid #444;
+    background:#fff;
+    color:#111;
+    font-size:16px;
+    font-weight:600;
+    font-family:'Nunito', sans-serif;
+    outline:none;
+    transition:border-color 0.2s, box-shadow 0.2s;
+}
+#troco::placeholder{ color:#999; font-weight:500; }
+#troco:focus{ border-color:var(--laranja); box-shadow:0 0 0 3px rgba(var(--laranja-rgb),0.2); }
+</style>
+
+</head>
+
+<body>
+
+<header class="header-topo">
+  <div class="overlay"></div>
+</header>
+
+<div id="statusHorario"></div>
+
+<div id="boasVindas" onclick="abrirPerfilCliente()"></div>
+
+<div id="bannerRelampago">
+  ⚡ <b>Happy Hour: 5% OFF por tempo limitado!</b>
+  <span id="countdownRelampago" class="rel-countdown"></span>
+</div>
+
+<div id="barraFidelidade"></div>
+
+<div class="endereco" id="blocoLoja">
+<h1 style="font-size:17px;margin-bottom:6px;">🍕 Max Hamburguer</h1>
+📍 Rua B (Lot Bela Vista) Nº 871<br>
+Jardim Buritis – Tangará da Serra – MT<br>
+<br>
+📞 <a href="https://wa.me/5565996953036" style="color:inherit;">(65) 99695-3036</a>
+&nbsp;|&nbsp; 🕕 Ter a Dom, 18h às 00h (fechado às segundas)
+<br>
+🌾 <b>Todas as nossas pizzas são feitas com massa 100% integral</b>
+<br>
+<button onclick="abrirMapa()">📍 Ver no mapa</button>
+</div>
+
+<div id="banner" class="banner" style="cursor:pointer;"></div>
+
+<div class="container">
+
+<input class="busca" id="busca" placeholder="🔎 Buscar produto">
+
+<div class="btn-flutuantes">
+
+<div class="linha">
+<button onclick="abrirPizzas()">🍕 Hambuguer</button>
+<button onclick="filtrar('bebidas')">🥤 Bebidas</button>
+</div>
+
+<div class="linha">
+<button onclick="filtrar('combo')">🎁 Combos</button>
+<button onclick="filtrar('snacks')">🍟 Snacks</button>
+</div>
+
+</div>
+
+<h2 id="tituloCombos">⭐ Combos da Semana</h2>
+<div id="combosSemana" class="combos-carrossel-wrap combos-carrossel"></div>
+
+<div id="produtos"></div>
+
+<!-- 🔥 CARRINHO ATUALIZADO -->
+<div id="carrinho">
+<h2>🛒 Carrinho</h2>
+
+<div id="lista"></div>
+
+<div class="total">
+Total + entrega: R$ <span id="total">0,00</span>
+</div>
+<div id="descontosAtivos"></div>
+<div id="infoFrete"></div>
+
+<div class="cupom-box">
+<input id="campoCupom" placeholder="Cupom de desconto" onkeydown="if(event.key==='Enter') aplicarCupom()">
+<button class="btn-aplicar" onclick="aplicarCupom()">Aplicar</button>
+<button class="btn-remover-cupom" onclick="removerCupom()">X</button>
+</div>
+<div id="msgCupom"></div>
+
+<!-- 📍 ENDEREÇO NOVO -->
+<div class="endereco-box">
+
+<h3>📍 Endereço de entrega</h3>
+
+<input id="rua" placeholder="Rua / Avenida">
+<input id="numero" placeholder="Número">
+<input id="complemento" placeholder="Complemento (opcional)">
+
+<h3>🏘️ Bairro</h3>
+
+<input id="bairroSelecionado" placeholder="Clique para selecionar bairro" readonly onclick="abrirModalBairros()">
+
+<div id="freteInfo">🚚 Frete será calculado automaticamente</div>
+
+</div>
+
+<h3 class="pagamento-titulo">💰 Forma de pagamento</h3>
+<div class="pagamento-opcoes" id="pagamentoOpcoes">
+<button type="button" class="pagamento-opcao ativo" data-valor="PIX" onclick="selecionarPagamento('PIX')">
+  <span class="pagamento-icone">💠</span> Pix
+</button>
+<button type="button" class="pagamento-opcao" data-valor="Dinheiro" onclick="selecionarPagamento('Dinheiro')">
+  <span class="pagamento-icone">💵</span> Dinheiro
+</button>
+<button type="button" class="pagamento-opcao" data-valor="Cartão" onclick="selecionarPagamento('Cartão')">
+  <span class="pagamento-icone">💳</span> Cartão
+</button>
+</div>
+<select id="pagamento" style="display:none">
+<option>PIX</option>
+<option>Dinheiro</option>
+<option>Cartão</option>
+</select>
+
+<div id="trocoBox">
+<label class="troco-label" for="troco">💵 Precisa de troco para quanto?</label>
+<input id="troco" placeholder="Ex: R$ 100,00">
+</div>
+
+<button class="enviar" onclick="enviarPedido()">
+Enviar pedido no WhatsApp
+</button>
+
+</div>
+
+</div>
+
+<details id="cardapioCompleto" aria-label="Cardápio completo"></details>
+
+<section id="sobreNos">
+  <h2>🌾 Nossa massa é 100% integral</h2>
+  <p>Na Sabore In Casa, toda pizza é feita com massa 100% integral — mais fibras, mais sabor e a mesma leveza de sempre. É o que nos diferencia das outras pizzarias da região: você não abre mão do sabor pra comer melhor.</p>
+  <p>Ficamos no Bairro Mantiqueira, Belo Horizonte, e entregamos em dezenas de bairros ao redor — de Venda Nova a Vespasiano, Santa Luzia, Ribeirão das Neves e Contagem.</p>
+</section>
+
+<div id="botaoCarrinho" onclick="scrollCarrinho()">
+🛒 <div id="contador">0</div>
+</div>
+
+<footer id="rodapeLoja">
+© Sabore In Casa<br>
+Desenvolvido por <b>Carlos Henrique</b>
+</footer>
+
+<div id="toast"></div>
+
+<div id="instalarBanner">
+  📲 <b>Instale nosso app!</b> Peça mais rápido da próxima vez.
+  <button onclick="instalarApp()">Instalar</button>
+  <span onclick="fecharInstalarBanner()">✕</span>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3" integrity="sha384-l8ah+VgaWtk1mvOe9VC+OirC6qHFF4yH7l7mKRidV9MSti3E9F463bMp6ZVN4kuC" crossorigin="anonymous"></script>
+<script src="https://sdk.mercadopago.com/js/v2"></script>
+<script src="integracao-sistema.js"></script>
+<script src="pagamento-mercadopago.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>

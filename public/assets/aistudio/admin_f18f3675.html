@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Painel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Montserrat:wght@700;800;900&display=swap">
+<style>
+*{ margin:0; padding:0; box-sizing:border-box; }
+:root{
+    --laranja:#ff9800; --grad-inicio:#ff6600; --laranja-rgb:255,152,0;
+}
+body{
+    font-family:'Nunito',sans-serif; background:linear-gradient(135deg,#0f0f0f,#1a1a1a); color:#fff;
+    min-height:100vh; display:flex; justify-content:center; align-items:center; padding:20px;
+}
+.box{
+    background:#1f1f1f; border-radius:22px; padding:40px 28px; width:100%; max-width:420px;
+    text-align:center; border:1px solid #333; box-shadow:0 20px 60px rgba(0,0,0,0.8);
+}
+.logo{ font-size:48px; margin-bottom:10px; }
+h1{ font-family:'Montserrat',sans-serif; font-size:22px; color:var(--laranja); margin-bottom:6px; }
+p{ color:#aaa; font-size:14px; line-height:1.5; margin-bottom:28px; }
+a.btn{
+    display:block; width:100%; background:linear-gradient(135deg,var(--grad-inicio),var(--laranja)); color:#fff;
+    text-decoration:none; padding:16px; border-radius:14px; font-weight:900; font-size:16px;
+    font-family:'Montserrat',sans-serif; box-shadow:0 6px 20px rgba(var(--laranja-rgb),0.4);
+    transition:transform 0.2s; margin-bottom:12px;
+}
+a.btn:hover{ transform:scale(1.03); }
+a.btn.secundario{ background:#2a2a2a; box-shadow:none; font-size:15px; }
+a.voltar{ color:#888; font-size:13px; text-decoration:none; }
+a.voltar:hover{ color:#ccc; }
+</style>
+</head>
+<body>
+
+<div class="box">
+    <div class="logo">🍕</div>
+    <h1 id="adminTitulo">Painel de Gestão</h1>
+    <p id="adminTexto">
+        O painel administrativo completo (caixa, estoque, vendas, clientes, cardápio e
+        relatórios) recebe automaticamente os pedidos feitos aqui no app de delivery.
+    </p>
+    <a class="btn" id="adminLinkGestao" href="#" target="_blank" rel="noopener">
+        Abrir Painel de Gestão
+    </a>
+    <a class="btn secundario" href="customizar.html">
+        🎨 Personalizar o app (marca, tema, horários...)
+    </a>
+    <a class="voltar" href="index.html">← Voltar ao app de delivery</a>
+</div>
+
+<script src="config.js"></script>
+<script>
+// Personaliza a pagina com os dados de config.js (nome da loja e link do sistema de gestao)
+(function(){
+    var c = window.CONFIG_PADRAO || {}
+    var nome = (c.marca && c.marca.nome) || "Delivery"
+    document.title = nome + " — Painel"
+    document.getElementById("adminTitulo").innerText = "Painel de " + nome
+    var link = (c.integracoes && c.integracoes.painelGestaoUrl) || ""
+    var a = document.getElementById("adminLinkGestao")
+    if(link){
+        a.href = link
+    } else {
+        a.style.display = "none"
+    }
+})()
+</script>
+
+</body>
+</html>

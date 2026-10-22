@@ -1,0 +1,6 @@
+{
+  "name": "Max Delivery - Gestão & Cadastro de Cardápio",
+  "description": "Painel de gestão, cadastro rápido de produtos e confirmação do cardápio para delivery de hambúrgueres e restaurantes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
