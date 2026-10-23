@@ -1,0 +1,85 @@
+{
+  "entities": {
+    "StoreConfig": {
+      "title": "StoreConfig",
+      "description": "Store profile, visual branding, delivery settings, Pix configuration and operational flags",
+      "type": "object",
+      "properties": {
+        "nome": { "type": "string", "maxLength": 100 },
+        "slogan": { "type": "string", "maxLength": 150 },
+        "whatsapp": { "type": "string", "maxLength": 20 },
+        "pixChave": { "type": "string", "maxLength": 100 },
+        "pixNomeTitular": { "type": "string", "maxLength": 100 },
+        "pixCidade": { "type": "string", "maxLength": 50 },
+        "taxaEntregaFixa": { "type": "number" },
+        "tempoEntrega": { "type": "string", "maxLength": 50 },
+        "corTema": { "type": "string", "maxLength": 20 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["nome", "whatsapp"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Menu product item with pricing, category, description, and status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "nome": { "type": "string", "maxLength": 100 },
+        "descricao": { "type": "string", "maxLength": 300 },
+        "preco": { "type": "number" },
+        "categoriaId": { "type": "string", "maxLength": 50 },
+        "disponivel": { "type": "boolean" },
+        "destaque": { "type": "boolean" },
+        "imagemUrl": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["id", "nome", "preco", "categoriaId", "disponivel"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Food delivery or pickup order placed by customer for kitchen KDS execution",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "numeroPedido": { "type": "number" },
+        "clienteNome": { "type": "string", "maxLength": 100 },
+        "clienteTelefone": { "type": "string", "maxLength": 30 },
+        "formaPagamento": { "type": "string", "maxLength": 30 },
+        "status": { "type": "string", "enum": ["pendente", "preparando", "pronto", "entregue", "cancelado"] },
+        "total": { "type": "number" },
+        "itensResumo": { "type": "string", "maxLength": 1000 },
+        "criadoEm": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "numeroPedido", "clienteNome", "clienteTelefone", "status", "total"]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized manager, cashier, or kitchen operator",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 150 },
+        "role": { "type": "string", "enum": ["admin", "kitchen", "attendant"] },
+        "criadoEm": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/store_config/{configId}": {
+      "schema": "StoreConfig",
+      "description": "Global store profile and payment settings"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Menu items available for ordering"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Real-time kitchen orders synced across mobile and PC"
+    },
+    "/admins/{userId}": {
+      "schema": "AdminUser",
+      "description": "Role-based administrator and kitchen team members"
+    }
+  }
+}

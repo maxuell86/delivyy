@@ -152,6 +152,7 @@ export interface StoreConfig {
   };
   cupons?: CouponItem[];
   horariosGrade?: { [dia: string]: { abre: number; fecha: number } | null };
+  customizacao?: CustomizationConfig;
 }
 
 export interface CartItem {
@@ -168,4 +169,74 @@ export interface CartItem {
   observacoes?: string;
   subtotal: number;
 }
+
+export type OrderStatus = 'recebido' | 'preparo' | 'rota' | 'concluido' | 'cancelado';
+
+export interface Order {
+  id: string;
+  numero: number;
+  clienteNome: string;
+  clienteTelefone: string;
+  tipoEntrega: 'delivery' | 'retirada' | 'mesa';
+  endereco?: string;
+  bairro?: string;
+  mesa?: string;
+  itens: CartItem[];
+  subtotal: number;
+  taxaEntrega: number;
+  desconto: number;
+  total: number;
+  formaPagamento: string;
+  status: OrderStatus;
+  criadoEm: string;
+  observacoes?: string;
+  tempoEstimadoMin?: number;
+}
+
+export interface StockItem {
+  produtoId: string;
+  nome: string;
+  categoria: CategoryId;
+  qtdAtual: number;
+  qtdMinima: number;
+  unidade: string;
+  status: 'ok' | 'baixo' | 'esgotado';
+  ultimaEntrada?: string;
+}
+
+export interface ColorPreset {
+  id: string;
+  nome: string;
+  nichoSugerido: string;
+  primaria: string;
+  secundaria: string;
+  fundo: string;
+  preview: string;
+}
+
+export interface CustomizationConfig {
+  paletaId?: string;
+  corPrimaria: string;
+  corSecundaria: string;
+  corFundo: string;
+  modoEscuro: boolean;
+  estiloCard: 'moderno' | 'classico' | 'compacto';
+  bannerUrl?: string;
+  logoUrl?: string;
+  mensagemBoasVindas?: string;
+  mostrarTempoEntrega: boolean;
+  destaqueOfertas: boolean;
+}
+
+export type DepartmentTab = 
+  | 'cardapio'
+  | 'pedidos'
+  | 'estoque'
+  | 'financeiro'
+  | 'customizacao'
+  | 'loja'
+  | 'simulador';
+
+export type ThemeMode = 'dark' | 'light';
+
 

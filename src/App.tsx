@@ -26,9 +26,15 @@ import { LoyaltyCouponsView } from './components/LoyaltyCouponsView';
 import { ProductionDeployGuide } from './components/ProductionDeployGuide';
 import { KitchenReceiptModal } from './components/KitchenReceiptModal';
 import { ReportsView } from './components/ReportsView';
-import { PaymentMethodsConfig } from './types';
+import { OrdersKdsView } from './components/OrdersKdsView';
+import { InventoryView } from './components/InventoryView';
+import { CustomizationView } from './components/CustomizationView';
+import { ClientOnboardingModal } from './components/ClientOnboardingModal';
+import { PaymentMethodsConfig, CartItem } from './types';
+import { useTheme } from './context/ThemeContext';
 
 export default function App() {
+  const { isDark } = useTheme();
   const [storeConfig, setStoreConfig] = useState<StoreConfig>(() => {
     try {
       const saved = localStorage.getItem('omni_delivery_config');
@@ -83,6 +89,20 @@ export default function App() {
   const [isSegmentModalOpen, setIsSegmentModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isKitchenReceiptOpen, setIsKitchenReceiptOpen] = useState(false);
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+
+  // Kitchen receipt dynamic order data
+  const [kitchenReceiptData, setKitchenReceiptData] = useState<{
+    cartItems: CartItem[];
+    customerName: string;
+    customerAddress: string;
+    paymentMethod: string;
+  }>({
+    cartItems: [],
+    customerName: 'Cliente Balcão',
+    customerAddress: 'Rua Principal, 100',
+    paymentMethod: 'PIX (Chave da Loja)',
+  });
 
   // Toast notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -270,8 +290,16 @@ export default function App() {
     return matchesCategory && matchesSearch && matchesStatus;
   });
 
+  const cardSurface = isDark 
+    ? 'bg-neutral-900 border-neutral-800' 
+    : 'bg-white border-neutral-200 shadow-sm';
+
+  const innerSurface = isDark 
+    ? 'bg-neutral-950 border-neutral-800 text-white' 
+    : 'bg-neutral-100 border-neutral-200 text-neutral-900';
+
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans selection:bg-orange-500 selection:text-white">
+    <div className={`min-h-screen ${isDark ? 'bg-neutral-950 text-neutral-100' : 'bg-neutral-50 text-neutral-900'} flex flex-col font-sans transition-colors duration-200 selection:bg-orange-500 selection:text-white`}>
       {/* Header */}
       <Header
         storeConfig={storeConfig}
@@ -295,29 +323,30 @@ export default function App() {
         onOpenSegmentModal={() => setIsSegmentModalOpen(true)}
         onOpenPaymentModal={() => setIsPaymentModalOpen(true)}
         onOpenKitchenReceipt={() => setIsKitchenReceiptOpen(true)}
+        onOpenOnboarding={() => setIsOnboardingOpen(true)}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         
-        {/* TAB 1: GESTÃO DE CARDÁPIO (PRODUTOS) */}
-        {activeTab === 'produtos' && (
+        {/* DEP 1: GESTÃO DE CARDÁPIO (PRODUTOS) */}
+        {(activeTab === 'cardapio' || activeTab === 'produtos') && (
           <div className="space-y-6">
             
             {/* Quick Segment Banner & Stats */}
-            <div className="bg-gradient-to-r from-neutral-900 to-neutral-900/90 border border-neutral-800 rounded-2xl p-4 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className={`${cardSurface} border rounded-2xl p-4 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3 transition-colors`}>
               <div className="flex items-center gap-3">
                 <span className="text-3xl">{currentSegmentConfig.icone}</span>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs uppercase font-bold text-orange-400">
+                    <span className="text-xs uppercase font-bold text-orange-500">
                       Segmento: {currentSegmentConfig.nome}
                     </span>
-                    <span className="text-[11px] text-neutral-400">
+                    <span className={`text-[11px] ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
                       ({products.length} itens cadastrados)
                     </span>
                   </div>
-                  <h2 className="text-base font-black text-white">
+                  <h2 className={`text-base font-black ${isDark ? 'text-white' : 'text-neutral-900'}`}>
                     {storeConfig.nome} • {storeConfig.slogan}
                   </h2>
                 </div>
@@ -325,31 +354,37 @@ export default function App() {
 
               <button
                 onClick={() => setIsSegmentModalOpen(true)}
-                className="px-3.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xl border border-neutral-700 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                className={`px-3.5 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 shadow-xs ${
+                  isDark ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border-neutral-700' : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border-neutral-300'
+                }`}
               >
-                <Building2 className="w-3.5 h-3.5 text-orange-400" />
+                <Building2 className="w-3.5 h-3.5 text-orange-500" />
                 <span>Trocar Segmento Comercial</span>
-                <ChevronDown className="w-3 h-3 text-neutral-400" />
+                <ChevronDown className="w-3 h-3 opacity-60" />
               </button>
             </div>
 
             {/* Quick Filter & Toolbar */}
-            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 shadow-lg flex flex-col md:flex-row gap-4 justify-between items-center">
+            <div className={`${cardSurface} border rounded-2xl p-4 shadow-lg flex flex-col md:flex-row gap-4 justify-between items-center transition-colors`}>
               
               {/* Search Bar */}
               <div className="relative w-full md:w-80">
-                <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-3" />
+                <Search className={`w-4 h-4 absolute left-3.5 top-3 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`} />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={`Buscar em ${currentSegmentConfig.nome.toLowerCase()}...`}
-                  className="w-full pl-10 pr-4 py-2 bg-neutral-950 border border-neutral-700 rounded-xl text-sm text-white placeholder-neutral-500 outline-none focus:border-orange-500 transition"
+                  className={`w-full pl-10 pr-4 py-2 border rounded-xl text-sm outline-none focus:border-orange-500 transition ${
+                    isDark 
+                      ? 'bg-neutral-950 border-neutral-700 text-white placeholder-neutral-500' 
+                      : 'bg-neutral-100 border-neutral-300 text-neutral-900 placeholder-neutral-400'
+                  }`}
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-2.5 text-xs text-neutral-400 hover:text-white"
+                    className="absolute right-3 top-2.5 text-xs text-neutral-400 hover:text-orange-500"
                   >
                     Limpar
                   </button>
@@ -358,11 +393,11 @@ export default function App() {
 
               {/* Status Filters & View Toggle */}
               <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-between md:justify-end">
-                <div className="flex items-center gap-1 bg-neutral-950 p-1 rounded-xl border border-neutral-800 text-xs font-semibold">
+                <div className={`flex items-center gap-1 p-1 rounded-xl border text-xs font-semibold ${innerSurface}`}>
                   <button
                     onClick={() => setStatusFilter('todos')}
                     className={`px-2.5 py-1 rounded-lg transition ${
-                      statusFilter === 'todos' ? 'bg-orange-500 text-white' : 'text-neutral-400 hover:text-white'
+                      statusFilter === 'todos' ? 'bg-orange-500 text-white' : isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-600 hover:text-neutral-900'
                     }`}
                   >
                     Todos ({products.length})
@@ -370,7 +405,7 @@ export default function App() {
                   <button
                     onClick={() => setStatusFilter('disponiveis')}
                     className={`px-2.5 py-1 rounded-lg transition ${
-                      statusFilter === 'disponiveis' ? 'bg-emerald-500 text-white' : 'text-neutral-400 hover:text-white'
+                      statusFilter === 'disponiveis' ? 'bg-emerald-500 text-white' : isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-600 hover:text-neutral-900'
                     }`}
                   >
                     Disponíveis ({products.filter((p) => p.disponivel).length})
@@ -378,7 +413,7 @@ export default function App() {
                   <button
                     onClick={() => setStatusFilter('pausados')}
                     className={`px-2.5 py-1 rounded-lg transition ${
-                      statusFilter === 'pausados' ? 'bg-red-500 text-white' : 'text-neutral-400 hover:text-white'
+                      statusFilter === 'pausados' ? 'bg-red-500 text-white' : isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-600 hover:text-neutral-900'
                     }`}
                   >
                     Pausados ({products.filter((p) => !p.disponivel).length})
@@ -386,18 +421,20 @@ export default function App() {
                   <button
                     onClick={() => setStatusFilter('destaques')}
                     className={`px-2.5 py-1 rounded-lg transition ${
-                      statusFilter === 'destaques' ? 'bg-amber-400 text-neutral-950' : 'text-neutral-400 hover:text-white'
+                      statusFilter === 'destaques' ? 'bg-amber-400 text-neutral-950 font-bold' : isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-600 hover:text-neutral-900'
                     }`}
                   >
                     Destaques ⭐
                   </button>
                 </div>
 
-                <div className="flex items-center gap-1 bg-neutral-950 p-1 rounded-xl border border-neutral-800">
+                <div className={`flex items-center gap-1 p-1 rounded-xl border ${innerSurface}`}>
                   <button
                     onClick={() => setViewMode('grid')}
                     className={`p-1.5 rounded-lg transition ${
-                      viewMode === 'grid' ? 'bg-neutral-800 text-orange-400' : 'text-neutral-500 hover:text-white'
+                      viewMode === 'grid' 
+                        ? 'bg-orange-500 text-white shadow-xs' 
+                        : isDark ? 'text-neutral-500 hover:text-white' : 'text-neutral-500 hover:text-neutral-900'
                     }`}
                     title="Visualização em Grade de Cards"
                   >
@@ -406,7 +443,9 @@ export default function App() {
                   <button
                     onClick={() => setViewMode('table')}
                     className={`p-1.5 rounded-lg transition ${
-                      viewMode === 'table' ? 'bg-neutral-800 text-orange-400' : 'text-neutral-500 hover:text-white'
+                      viewMode === 'table' 
+                        ? 'bg-orange-500 text-white shadow-xs' 
+                        : isDark ? 'text-neutral-500 hover:text-white' : 'text-neutral-500 hover:text-neutral-900'
                     }`}
                     title="Visualização em Tabela Rápida"
                   >
@@ -423,11 +462,13 @@ export default function App() {
                 className={`px-3.5 py-2 rounded-xl text-xs font-black transition whitespace-nowrap flex items-center gap-2 border ${
                   selectedCategory === 'todos'
                     ? 'border-orange-500 bg-orange-500 text-white shadow-md shadow-orange-500/20'
-                    : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:border-neutral-700 hover:text-white'
+                    : isDark
+                    ? 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:border-neutral-700 hover:text-white'
+                    : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 hover:text-neutral-900 shadow-xs'
                 }`}
               >
                 <span>🔥 Todas as Categorias</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/30">
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isDark ? 'bg-black/40 text-neutral-300' : 'bg-neutral-200 text-neutral-700'}`}>
                   {products.length}
                 </span>
               </button>
@@ -441,12 +482,14 @@ export default function App() {
                     className={`px-3.5 py-2 rounded-xl text-xs font-black transition whitespace-nowrap flex items-center gap-2 border ${
                       selectedCategory === cat.id
                         ? 'border-orange-500 bg-orange-500 text-white shadow-md shadow-orange-500/20'
-                        : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:border-neutral-700 hover:text-white'
+                        : isDark
+                        ? 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:border-neutral-700 hover:text-white'
+                        : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 hover:text-neutral-900 shadow-xs'
                     }`}
                   >
                     <span>{cat.icone}</span>
                     <span>{cat.nome}</span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/30">
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isDark ? 'bg-black/40 text-neutral-300' : 'bg-neutral-200 text-neutral-700'}`}>
                       {count}
                     </span>
                   </button>
@@ -456,12 +499,12 @@ export default function App() {
 
             {/* Product List Content */}
             {filteredProducts.length === 0 ? (
-              <div className="py-16 text-center bg-neutral-900/60 border border-neutral-800/80 rounded-2xl p-8">
-                <div className="w-16 h-16 rounded-2xl bg-neutral-800 text-neutral-400 flex items-center justify-center mx-auto text-2xl mb-3">
+              <div className={`py-16 text-center ${cardSurface} border rounded-2xl p-8 transition-colors`}>
+                <div className={`w-16 h-16 rounded-2xl ${isDark ? 'bg-neutral-800 text-neutral-400' : 'bg-neutral-100 text-neutral-500'} flex items-center justify-center mx-auto text-2xl mb-3`}>
                   {currentSegmentConfig.icone}
                 </div>
-                <h3 className="text-lg font-bold text-white">Nenhum item encontrado</h3>
-                <p className="text-sm text-neutral-400 mt-1 max-w-md mx-auto">
+                <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-neutral-900'}`}>Nenhum item encontrado</h3>
+                <p className={`text-sm mt-1 max-w-md mx-auto ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
                   Não encontramos nenhum item correspondente aos filtros atuais. Tente limpar a busca ou adicione um novo produto.
                 </p>
                 <button
@@ -470,7 +513,9 @@ export default function App() {
                     setSelectedCategory('todos');
                     setStatusFilter('todos');
                   }}
-                  className="mt-4 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xl text-xs font-bold transition"
+                  className={`mt-4 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                    isDark ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200' : 'bg-neutral-200 hover:bg-neutral-300 text-neutral-800'
+                  }`}
                 >
                   Limpar Filtros
                 </button>
@@ -496,10 +541,12 @@ export default function App() {
               </div>
             ) : (
               /* TABLE VIEW */
-              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg">
+              <div className={`${cardSurface} border rounded-2xl overflow-hidden shadow-lg transition-colors`}>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-neutral-950/80 border-b border-neutral-800 text-neutral-400 uppercase tracking-wider font-bold">
+                    <thead className={`border-b uppercase tracking-wider font-bold ${
+                      isDark ? 'bg-neutral-950/80 border-neutral-800 text-neutral-400' : 'bg-neutral-100 border-neutral-200 text-neutral-700'
+                    }`}>
                       <tr>
                         <th className="py-3 px-4">Item</th>
                         <th className="py-3 px-4">Categoria</th>
@@ -509,39 +556,41 @@ export default function App() {
                         <th className="py-3 px-4 text-right">Ações</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-neutral-800/80">
+                    <tbody className={`divide-y ${isDark ? 'divide-neutral-800/80' : 'divide-neutral-200'}`}>
                       {filteredProducts.map((p) => (
-                        <tr key={p.id} className="hover:bg-neutral-800/40 transition">
+                        <tr key={p.id} className={`transition ${isDark ? 'hover:bg-neutral-800/40' : 'hover:bg-neutral-50'}`}>
                           <td className="py-3 px-4 flex items-center gap-3">
                             <img
                               src={p.foto}
                               alt={p.nome}
-                              className="w-10 h-10 rounded-lg object-cover bg-neutral-950 flex-shrink-0"
+                              className={`w-10 h-10 rounded-lg object-cover flex-shrink-0 ${isDark ? 'bg-neutral-950' : 'bg-neutral-100'}`}
                             />
                             <div>
-                              <p className="font-bold text-white text-sm">{p.nome}</p>
-                              <p className="text-[11px] text-neutral-400 line-clamp-1">{p.descricao}</p>
+                              <p className={`font-bold text-sm ${isDark ? 'text-white' : 'text-neutral-900'}`}>{p.nome}</p>
+                              <p className={`text-[11px] line-clamp-1 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>{p.descricao}</p>
                             </div>
                           </td>
 
-                          <td className="py-3 px-4 font-semibold text-orange-400 capitalize">
+                          <td className="py-3 px-4 font-semibold text-orange-500 capitalize">
                             {p.categoria}
                           </td>
 
-                          <td className="py-3 px-4 font-black text-emerald-400 text-sm">
+                          <td className="py-3 px-4 font-black text-emerald-500 text-sm">
                             R$ {p.preco.toFixed(2).replace('.', ',')}
                             {p.unidadeMedida && p.unidadeMedida !== 'unidade' && (
-                              <span className="text-[10px] text-neutral-400 font-normal"> /{p.unidadeMedida}</span>
+                              <span className={`text-[10px] font-normal ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}> /{p.unidadeMedida}</span>
                             )}
                           </td>
 
-                          <td className="py-3 px-4 text-neutral-300">
+                          <td className={`py-3 px-4 ${isDark ? 'text-neutral-300' : 'text-neutral-700'}`}>
                             {p.opcoes && p.opcoes.length > 0 ? (
-                              <span className="px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-[11px] font-bold">
+                              <span className={`px-2 py-0.5 rounded border text-[11px] font-bold ${
+                                isDark ? 'bg-neutral-800 border-neutral-700 text-white' : 'bg-neutral-100 border-neutral-300 text-neutral-800'
+                              }`}>
                                 {p.opcoes.length} grupos
                               </span>
                             ) : (
-                              <span className="text-neutral-500">—</span>
+                              <span className="text-neutral-400">—</span>
                             )}
                           </td>
 
@@ -550,33 +599,37 @@ export default function App() {
                               onClick={() => handleToggleDisponivel(p.id)}
                               className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition ${
                                 p.disponivel
-                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                  : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                  ? 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/30'
+                                  : 'bg-red-500/20 text-red-500 border border-red-500/30'
                               }`}
                             >
                               {p.disponivel ? 'Disponível' : 'Esgotado'}
                             </button>
                           </td>
 
-                          <td className="py-3 px-4 text-right space-x-2">
+                          <td className="py-3 px-4 text-right space-x-1.5 whitespace-nowrap">
                             <button
                               onClick={() => {
                                 setEditingProduct(p);
                                 setIsProductModalOpen(true);
                               }}
-                              className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded font-semibold"
+                              className={`px-2.5 py-1 rounded font-semibold transition ${
+                                isDark ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200' : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-700 border border-neutral-200'
+                              }`}
                             >
                               Editar
                             </button>
                             <button
                               onClick={() => handleDuplicateProduct(p)}
-                              className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white rounded font-semibold"
+                              className={`px-2.5 py-1 rounded font-semibold transition ${
+                                isDark ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white' : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-600 hover:text-neutral-900 border border-neutral-200'
+                              }`}
                             >
                               Duplicar
                             </button>
                             <button
                               onClick={() => handleDeleteProduct(p.id)}
-                              className="px-2.5 py-1 bg-red-950/40 hover:bg-red-900/60 text-red-400 rounded font-semibold"
+                              className="px-2.5 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 rounded font-semibold transition"
                             >
                               Excluir
                             </button>
@@ -591,7 +644,52 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 2: DADOS DA LOJA, HORÁRIOS & FRETE POR BAIRRO */}
+        {/* DEP 2: PEDIDOS & KDS EM TEMPO REAL */}
+        {activeTab === 'pedidos' && (
+          <OrdersKdsView
+            storeConfig={storeConfig}
+            products={products}
+            onOpenKitchenReceipt={(cartItems, name, addr, pay) => {
+              setKitchenReceiptData({
+                cartItems,
+                customerName: name,
+                customerAddress: addr,
+                paymentMethod: pay,
+              });
+              setIsKitchenReceiptOpen(true);
+            }}
+            showToast={showToast}
+          />
+        )}
+
+        {/* DEP 3: ESTOQUE & INSUMOS */}
+        {activeTab === 'estoque' && (
+          <InventoryView
+            products={products}
+            onToggleDisponivel={handleToggleDisponivel}
+            showToast={showToast}
+          />
+        )}
+
+        {/* DEP 4: FINANCEIRO & RELATÓRIOS (RECHARTS) */}
+        {(activeTab === 'financeiro' || activeTab === 'relatorios') && (
+          <ReportsView
+            products={products}
+            storeConfig={storeConfig}
+          />
+        )}
+
+        {/* DEP 5: CUSTOMIZAÇÃO DE CORES & IDENTIDADE VISUAL */}
+        {activeTab === 'customizacao' && (
+          <CustomizationView
+            storeConfig={storeConfig}
+            onSaveConfig={saveStoreConfig}
+            showToast={showToast}
+            onOpenSimulator={() => setActiveTab('simulador')}
+          />
+        )}
+
+        {/* DEP 6: DADOS DA LOJA, HORÁRIOS & FRETE POR BAIRRO */}
         {activeTab === 'loja' && (
           <StoreSettingsView
             storeConfig={storeConfig}
@@ -600,7 +698,7 @@ export default function App() {
           />
         )}
 
-        {/* TAB 3: PROGRAMA DE FIDELIDADE & CUPONS */}
+        {/* PROGRAMA DE FIDELIDADE & CUPONS */}
         {activeTab === 'fidelidade' && (
           <LoyaltyCouponsView
             storeConfig={storeConfig}
@@ -609,15 +707,7 @@ export default function App() {
           />
         )}
 
-        {/* TAB 4: RELATÓRIOS & INTELIGÊNCIA DE VENDAS (RECHARTS) */}
-        {activeTab === 'relatorios' && (
-          <ReportsView
-            products={products}
-            storeConfig={storeConfig}
-          />
-        )}
-
-        {/* TAB 5: SIMULADOR DO CLIENTE (LIVE DELIVERY WEB APP) */}
+        {/* DEP 7: SIMULADOR DO CLIENTE (LIVE DELIVERY WEB APP) */}
         {activeTab === 'simulador' && (
           <CustomerSimulator
             products={products}
@@ -625,7 +715,7 @@ export default function App() {
           />
         )}
 
-        {/* TAB 5: GUIA COMPLETO PARA COLOCAR EM PRODUÇÃO */}
+        {/* DEP 8: GUIA COMPLETO PARA COLOCAR EM PRODUÇÃO */}
         {activeTab === 'producao' && (
           <ProductionDeployGuide
             storeConfig={storeConfig}
@@ -633,7 +723,7 @@ export default function App() {
           />
         )}
 
-        {/* TAB 6: DIAGNÓSTICO & ESCALABILIDADE COMERCIAL */}
+        {/* DIAGNÓSTICO & ESCALABILIDADE COMERCIAL */}
         {activeTab === 'diagnostico' && (
           <DiagnosticView
             products={products}
@@ -645,11 +735,13 @@ export default function App() {
       </main>
 
       {/* FOOTER */}
-      <footer className="border-t border-neutral-800/80 bg-neutral-900/60 py-6 text-center text-xs text-neutral-400">
+      <footer className={`border-t py-6 text-center text-xs transition-colors ${
+        isDark ? 'border-neutral-800/80 bg-neutral-900/60 text-neutral-400' : 'border-neutral-200 bg-white text-neutral-600 shadow-xs'
+      }`}>
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="text-neutral-300 font-bold">{storeConfig.nome}</span>
+            <span className={`font-bold ${isDark ? 'text-neutral-300' : 'text-neutral-800'}`}>{storeConfig.nome}</span>
             <span>• Nicho: {currentSegmentConfig.nome}</span>
           </div>
 
@@ -720,11 +812,29 @@ export default function App() {
         }}
       />
 
+      {/* CLIENT ONBOARDING WIZARD MODAL */}
+      <ClientOnboardingModal
+        isOpen={isOnboardingOpen}
+        onClose={() => setIsOnboardingOpen(false)}
+        onComplete={(newConfig, loadSample) => {
+          saveStoreConfig(newConfig);
+          if (loadSample) {
+            const sample = PRODUTOS_PRESETS_SEGMENTO[newConfig.segmento] || [];
+            saveProducts(sample);
+          }
+          showToast(`Novo cliente "${newConfig.nome}" configurado e lançado com sucesso!`);
+          setActiveTab('cardapio');
+        }}
+      />
+
       {/* KITCHEN RECEIPT MODAL */}
       <KitchenReceiptModal
         isOpen={isKitchenReceiptOpen}
         storeConfig={storeConfig}
-        cartItems={[]}
+        cartItems={kitchenReceiptData.cartItems}
+        customerName={kitchenReceiptData.customerName}
+        customerAddress={kitchenReceiptData.customerAddress}
+        paymentMethod={kitchenReceiptData.paymentMethod}
         onClose={() => setIsKitchenReceiptOpen(false)}
       />
 

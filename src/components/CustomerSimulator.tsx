@@ -15,11 +15,14 @@ import {
   CreditCard, 
   DollarSign, 
   Utensils, 
-  Copy 
+  Copy,
+  Sun,
+  Moon
 } from 'lucide-react';
-import { Product, StoreConfig, CartItem, CategoryId } from '../types';
+import { Product, StoreConfig, CartItem, CategoryId, Order } from '../types';
 import { CATEGORIAS_POR_SEGMENTO, SEGMENTOS_DISPONIVEIS } from '../data/segmentData';
 import { generatePixPayload } from '../utils/pixPayload';
+import { playOrderChime } from '../utils/soundAlert';
 
 interface CustomerSimulatorProps {
   products: Product[];
@@ -73,6 +76,15 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
   const [trocoPara, setTrocoPara] = useState('');
   const [valeSelecionado, setValeSelecionado] = useState(paymentConfig.valesAceitos[0] || 'Alelo');
   const [copiedPix, setCopiedPix] = useState(false);
+
+  // Customer Theme mode (independent of Admin panel)
+  const [customerTheme, setCustomerTheme] = useState<'dark' | 'light'>(
+    storeConfig.customizacao?.modoEscuro === false ? 'light' : 'dark'
+  );
+  const isCustomerDark = customerTheme === 'dark';
+  const [customerName, setCustomerName] = useState('Mariana Ferreira');
+  const [customerPhone, setCustomerPhone] = useState('5565999881122');
+  const [deliveryType, setDeliveryType] = useState<'delivery' | 'retirada'>('delivery');
 
   // Filter products for customer
   const filteredProducts = products.filter((p) => {
@@ -257,6 +269,42 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
   };
 
   const handleSendTestWhatsApp = () => {
+    // 1. Integrar pedido diretamente ao KDS da Cozinha
+    let pagFormatado = 'Pix';
+    if (paymentMethod === 'PIX') pagFormatado = 'PIX (Chave da Loja)';
+    if (paymentMethod === 'CartaoCredito') pagFormatado = 'Cartão de Crédito na Entrega';
+    if (paymentMethod === 'CartaoDebito') pagFormatado = 'Cartão de Débito na Entrega';
+    if (paymentMethod === 'Dinheiro') pagFormatado = `Dinheiro ${trocoPara ? `(Troco para R$ ${trocoPara})` : '(Sem troco)'}`;
+    if (paymentMethod === 'ValeRefeicao') pagFormatado = `Vale Refeição (${valeSelecionado})`;
+
+    const orderNum = Math.floor(105 + Math.random() * 890);
+    const newOrder: Order = {
+      id: 'ord_' + Date.now(),
+      numero: orderNum,
+      clienteNome: customerName || 'Cliente Delivery',
+      clienteTelefone: customerPhone || storeConfig.whatsapp,
+      tipoEntrega: deliveryType,
+      endereco: deliveryType === 'delivery' ? deliveryAddress : 'Retirada no Balcão da Loja',
+      bairro: deliveryType === 'delivery' ? (storeConfig.bairro || 'Centro') : 'Balcão',
+      itens: [...cart],
+      subtotal: cartSubtotal,
+      taxaEntrega: deliveryType === 'delivery' ? storeConfig.taxaEntregaPadrao : 0,
+      desconto: pixDiscount,
+      total: cartTotal,
+      formaPagamento: pagFormatado,
+      status: 'recebido',
+      criadoEm: 'Agora mesmo',
+      tempoEstimadoMin: 35,
+    };
+
+    try {
+      const existing = localStorage.getItem('omni_kds_orders');
+      const ordersList: Order[] = existing ? JSON.parse(existing) : [];
+      localStorage.setItem('omni_kds_orders', JSON.stringify([newOrder, ...ordersList]));
+      window.dispatchEvent(new CustomEvent('new_order_placed', { detail: newOrder }));
+      playOrderChime();
+    } catch {}
+
     const text = encodeURIComponent(generateWhatsAppMessage());
     window.open(`https://wa.me/${storeConfig.whatsapp}?text=${text}`, '_blank');
   };
@@ -318,39 +366,66 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
       </div>
 
       {/* MOBILE DEVICE MOCKUP */}
-      <div className="w-full max-w-[400px] mx-auto flex-shrink-0">
-        <div className="relative rounded-[40px] bg-neutral-950 border-[8px] border-neutral-800 shadow-2xl overflow-hidden aspect-[9/19] flex flex-col">
+      <div className="w-full max-w-[400px] mx-auto flex-shrink-0 space-y-2">
+        {/* Mobile simulator theme & preview bar */}
+        <div className="flex items-center justify-between px-2 text-xs">
+          <span className="text-neutral-400 font-medium">Tema do Cardápio do Cliente:</span>
+          <button
+            onClick={() => setCustomerTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-bold transition active:scale-95 ${
+              isCustomerDark
+                ? 'bg-neutral-800 text-amber-300 border-neutral-700 hover:bg-neutral-700'
+                : 'bg-white text-slate-800 border-slate-300 hover:bg-slate-100 shadow-xs'
+            }`}
+            title="Alternar tema do cardápio do cliente (Dark / Light)"
+          >
+            {isCustomerDark ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-neutral-800" />}
+            <span>{isCustomerDark ? 'Modo Escuro' : 'Modo Claro'}</span>
+          </button>
+        </div>
+
+        <div className={`relative rounded-[40px] border-[8px] shadow-2xl overflow-hidden aspect-[9/19] flex flex-col transition-colors duration-200 ${
+          isCustomerDark ? 'bg-neutral-950 border-neutral-800' : 'bg-slate-50 border-slate-300'
+        }`}>
           
           {/* Mobile Top Bar */}
-          <div className="bg-neutral-900 text-neutral-400 px-6 pt-3 pb-2 text-[11px] font-semibold flex items-center justify-between border-b border-neutral-800 z-10">
+          <div className={`px-6 pt-3 pb-2 text-[11px] font-semibold flex items-center justify-between border-b z-10 ${
+            isCustomerDark ? 'bg-neutral-900 text-neutral-400 border-neutral-800' : 'bg-white text-slate-600 border-slate-200'
+          }`}>
             <span>20:28</span>
-            <div className="w-16 h-3.5 bg-neutral-950 rounded-full mx-auto" />
-            <span className="text-orange-400 font-bold">{segmentConfig.icone} Delivery</span>
+            <div className={`w-16 h-3.5 rounded-full mx-auto ${isCustomerDark ? 'bg-neutral-950' : 'bg-slate-200'}`} />
+            <span className="text-orange-500 font-bold">{segmentConfig.icone} Delivery</span>
           </div>
 
           {/* Delivery App Content Container */}
-          <div className="flex-1 overflow-y-auto bg-neutral-950 text-white relative">
+          <div className={`flex-1 overflow-y-auto relative transition-colors duration-200 ${
+            isCustomerDark ? 'bg-neutral-950 text-white' : 'bg-slate-50 text-slate-900'
+          }`}>
             
             {/* Header Banner */}
-            <div className="relative aspect-[16/9] bg-neutral-900">
+            <div className={`relative aspect-[16/9] ${isCustomerDark ? 'bg-neutral-900' : 'bg-slate-200'}`}>
               <img
                 src={products[0]?.foto || 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=800&q=80'}
                 alt="Banner"
                 className="w-full h-full object-cover opacity-60"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/40 to-transparent flex flex-col justify-end p-4">
+              <div className={`absolute inset-0 flex flex-col justify-end p-4 ${
+                isCustomerDark 
+                  ? 'bg-gradient-to-t from-neutral-950 via-neutral-950/40 to-transparent' 
+                  : 'bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent'
+              }`}>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-orange-500 text-white w-max mb-1">
                   {storeConfig.aberto ? 'ABERTO AGORA' : 'FECHADO'}
                 </span>
                 <h3 className="text-lg font-black text-white leading-tight">
                   {storeConfig.nome}
                 </h3>
-                <p className="text-[11px] text-neutral-300 flex items-center gap-1 mt-0.5">
+                <p className="text-[11px] text-neutral-200 flex items-center gap-1 mt-0.5">
                   <MapPin className="w-3 h-3 text-orange-400" />
                   {storeConfig.bairro} • {storeConfig.cidade}
                 </p>
-                <p className="text-[10px] text-neutral-400 flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-neutral-500" />
+                <p className="text-[10px] text-neutral-300 flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-neutral-400" />
                   Entrega: {storeConfig.tempoEntrega} • Taxa R$ {storeConfig.taxaEntregaPadrao.toFixed(2)}
                 </p>
               </div>
@@ -359,13 +434,17 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
             {/* Quick Search inside app */}
             <div className="p-3">
               <div className="relative">
-                <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-2.5" />
+                <Search className={`w-3.5 h-3.5 absolute left-3 top-2.5 ${isCustomerDark ? 'text-neutral-400' : 'text-slate-400'}`} />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={`Buscar ${segmentConfig.termoProduto.toLowerCase()}...`}
-                  className="w-full pl-8 pr-3 py-1.5 bg-neutral-900 border border-neutral-800 rounded-xl text-xs text-white placeholder-neutral-500 outline-none focus:border-orange-500"
+                  className={`w-full pl-8 pr-3 py-1.5 border rounded-xl text-xs outline-none focus:border-orange-500 transition ${
+                    isCustomerDark
+                      ? 'bg-neutral-900 border-neutral-800 text-white placeholder-neutral-500'
+                      : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 shadow-xs'
+                  }`}
                 />
               </div>
             </div>
@@ -377,7 +456,9 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
                 className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition ${
                   selectedCategory === 'todos'
                     ? 'bg-orange-500 text-white'
-                    : 'bg-neutral-900 text-neutral-400'
+                    : isCustomerDark
+                    ? 'bg-neutral-900 text-neutral-400'
+                    : 'bg-white text-slate-600 border border-slate-200 shadow-xs'
                 }`}
               >
                 Todos
@@ -389,7 +470,9 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
                   className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition flex items-center gap-1 ${
                     selectedCategory === cat.id
                       ? 'bg-orange-500 text-white'
-                      : 'bg-neutral-900 text-neutral-400'
+                      : isCustomerDark
+                      ? 'bg-neutral-900 text-neutral-400'
+                      : 'bg-white text-slate-600 border border-slate-200 shadow-xs'
                   }`}
                 >
                   <span>{cat.icone}</span>
@@ -404,13 +487,17 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
                 <div
                   key={p.id}
                   onClick={() => handleOpenItem(p)}
-                  className={`p-2.5 rounded-xl bg-neutral-900 border transition flex gap-3 cursor-pointer ${
+                  className={`p-2.5 rounded-xl border transition flex gap-3 cursor-pointer ${
+                    isCustomerDark
+                      ? 'bg-neutral-900 border-neutral-800 hover:border-orange-500/50'
+                      : 'bg-white border-slate-200 hover:border-orange-500/50 shadow-xs'
+                  } ${
                     p.disponivel
-                      ? 'border-neutral-800 hover:border-orange-500/50 active:scale-98'
-                      : 'border-neutral-800/40 opacity-50 cursor-not-allowed'
+                      ? 'active:scale-98'
+                      : 'opacity-50 cursor-not-allowed'
                   }`}
                 >
-                  <div className="w-16 h-16 rounded-lg overflow-hidden bg-neutral-950 flex-shrink-0 relative">
+                  <div className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 relative ${isCustomerDark ? 'bg-neutral-950' : 'bg-slate-100'}`}>
                     <img
                       src={p.foto}
                       alt={p.nome}
@@ -428,35 +515,42 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
                   <div className="flex-1 min-w-0 flex flex-col justify-between">
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <h4 className="text-xs font-bold text-white truncate">{p.nome}</h4>
+                        <h4 className={`text-xs font-bold truncate ${isCustomerDark ? 'text-white' : 'text-slate-900'}`}>{p.nome}</h4>
                         {p.selo && (
                           <span className="text-[9px] font-black uppercase px-1 rounded bg-orange-500 text-white flex-shrink-0">
                             {p.selo}
                           </span>
                         )}
                       </div>
-                      <p className="text-[10px] text-neutral-400 line-clamp-1 mt-0.5">
+                      <p className={`text-[10px] line-clamp-1 mt-0.5 ${isCustomerDark ? 'text-neutral-400' : 'text-slate-500'}`}>
                         {p.descricao}
                       </p>
                     </div>
 
                     <div className="flex items-center justify-between mt-1">
                       <div className="flex items-baseline gap-1">
-                        <span className="text-xs font-black text-emerald-400">
+                        <span className="text-xs font-black text-emerald-500">
                           R$ {p.preco.toFixed(2).replace('.', ',')}
                           {p.unidadeMedida && p.unidadeMedida !== 'unidade' && (
-                            <span className="text-[10px] text-neutral-400 font-normal"> /{p.unidadeMedida}</span>
+                            <span className={`text-[10px] font-normal ${isCustomerDark ? 'text-neutral-400' : 'text-slate-400'}`}> /{p.unidadeMedida}</span>
                           )}
                         </span>
                         {p.precoPromocional && (
-                          <span className="text-[9px] text-neutral-500 line-through">
+                          <span className="text-[9px] text-neutral-400 line-through">
                             R$ {p.precoPromocional.toFixed(2).replace('.', ',')}
                           </span>
                         )}
                       </div>
 
                       {p.disponivel && (
-                        <span className="text-[10px] font-bold text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded-md border border-orange-500/20">
+                        <span
+                          className="text-[10px] font-bold px-2 py-0.5 rounded-md border"
+                          style={{
+                            color: storeConfig.corTema || '#f97316',
+                            borderColor: `${storeConfig.corTema || '#f97316'}40`,
+                            backgroundColor: `${storeConfig.corTema || '#f97316'}15`,
+                          }}
+                        >
                           {p.opcoes && p.opcoes.length > 0 ? 'Personalizar' : 'Pedir'}
                         </span>
                       )}
