@@ -32,12 +32,14 @@ interface AdminTeamModalProps {
   isOpen: boolean;
   onClose: () => void;
   showToast: (msg: string) => void;
+  onForceSyncCloud?: () => Promise<void>;
 }
 
 export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
   isOpen,
   onClose,
   showToast,
+  onForceSyncCloud,
 }) => {
   const { user, isAdmin, isSuperAdmin, signIn, signOut } = useAuth();
   const { isDark } = useTheme();
@@ -371,20 +373,32 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className={`p-4 border-t flex items-center justify-between text-xs ${isDark ? 'border-neutral-800 text-neutral-400' : 'border-neutral-200 text-neutral-600'}`}>
+        <div className={`p-4 border-t flex flex-wrap items-center justify-between gap-2 text-xs ${isDark ? 'border-neutral-800 text-neutral-400' : 'border-neutral-200 text-neutral-600'}`}>
           <div className="flex items-center gap-1.5 text-emerald-500 font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span>Sincronização em Nuvem Ativa (Firestore)</span>
           </div>
 
-          <button
-            onClick={onClose}
-            className={`px-4 py-2 rounded-xl text-xs font-bold border transition ${
-              isDark ? 'bg-neutral-800 hover:bg-neutral-700 text-white border-neutral-700' : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border-neutral-300'
-            }`}
-          >
-            Fechar
-          </button>
+          <div className="flex items-center gap-2">
+            {onForceSyncCloud && isAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  onForceSyncCloud();
+                }}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white transition"
+              >
+                Sincronizar Catálogo na Nuvem
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className={`px-4 py-2 rounded-xl text-xs font-bold border transition ${
+                isDark ? 'bg-neutral-800 hover:bg-neutral-700 text-white border-neutral-700' : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border-neutral-300'
+              }`}
+            >
+              Fechar
+            </button>
+          </div>
         </div>
 
       </div>

@@ -18,12 +18,13 @@ import {
   ShoppingBag,
   Volume2,
   VolumeX,
-  Sparkles
+  Sparkles,
+  Trash2
 } from 'lucide-react';
 import { Order, OrderStatus, StoreConfig, CartItem, Product } from '../types';
 import { useTheme } from '../context/ThemeContext';
 import { playOrderChime, testKitchenChime, isSoundMuted, setSoundMuted } from '../utils/soundAlert';
-import { subscribeToOrders, updateOrderStatusInFirestore } from '../services/firestoreSync';
+import { subscribeToOrders, syncOrderToFirestore, updateOrderStatusInFirestore, clearAllOrdersInFirestore } from '../services/firestoreSync';
 
 interface OrdersKdsViewProps {
   storeConfig: StoreConfig;
@@ -41,6 +42,10 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
   // Mock inicial de pedidos realistas para demonstração imediata
   const [orders, setOrders] = useState<Order[]>(() => {
     try {
+      if (localStorage.getItem('omni_kds_orders_cleared') === 'true') {
+        const saved = localStorage.getItem('omni_kds_orders');
+        return saved ? JSON.parse(saved) : [];
+      }
       const saved = localStorage.getItem('omni_kds_orders');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
@@ -224,7 +229,6 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
     const unsubscribeFirestore = subscribeToOrders((cloudOrders) => {
       if (cloudOrders && cloudOrders.length > 0) {
         setOrders((prev) => {
-          // Detectar novos pedidos para disparar campainha acústica
           const hasNewOrder = cloudOrders.some(co => !prev.some(po => po.id === co.id));
           if (hasNewOrder && prev.length > 0) {
             playOrderChime();
@@ -238,6 +242,8 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
         try {
           localStorage.setItem('omni_kds_orders', JSON.stringify(cloudOrders));
         } catch {}
+      } else if (cloudOrders && cloudOrders.length === 0 && localStorage.getItem('omni_kds_orders_cleared') === 'true') {
+        setOrders([]);
       }
     });
 
@@ -334,14 +340,17 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
       total: prod.preco + storeConfig.taxaEntregaPadrao,
       formaPagamento: 'PIX (Chave da Loja)',
       status: 'recebido',
-      criadoEm: 'Agora mesmo',
+      criadoEm: new Date().toISOString(),
       tempoEstimadoMin: 40,
     };
 
     saveOrders([newOrder, ...orders]);
+    syncOrderToFirestore(newOrder).catch((err) => {
+      console.warn('Sincronização de pedido KDS em modo local:', err);
+    });
     setRecentOrderId(newOrder.id);
     playOrderChime();
-    showToast(`🔔 Novo pedido #${newNum} inserido no painel!`);
+    showToast(`🔔 Novo pedido #${newNum} sincronizado na nuvem!`);
   };
 
   const filteredOrders = orders.filter((o) => {
@@ -368,7 +377,23 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
     }
 
     const url = `https://wa.me/${order.clienteTelefone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`;
-    window.open(url, '_blank');
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.click();
+  };
+
+  const handleClearOrders = async () => {
+    setOrders([]);
+    try {
+      localStorage.setItem('omni_kds_orders_cleared', 'true');
+      localStorage.setItem('omni_kds_orders', JSON.stringify([]));
+    } catch {}
+    await clearAllOrdersInFirestore().catch((err) => {
+      console.warn('Erro ao limpar pedidos no Firestore:', err);
+    });
+    showToast('Painel KDS zerado! Pronto para receber pedidos reais.');
   };
 
   const cardSurfaceClass = isDark
@@ -454,7 +479,7 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
 
           <button
             onClick={handleCreateMockOrder}
-            className={`px-3.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition active:scale-95 ${
+            className={`px-3.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer ${
               isDark 
                 ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border-neutral-700' 
                 : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border-neutral-300 shadow-xs'
@@ -462,8 +487,19 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
             title="Simula a chegada de um novo pedido de cliente com som de campainha"
           >
             <Plus className="w-4 h-4 text-emerald-500" />
-            <span>+ Simular Pedido Balcão</span>
+            <span>+ Pedido Balcão</span>
           </button>
+
+          {orders.length > 0 && (
+            <button
+              onClick={handleClearOrders}
+              className="px-3 py-1.5 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+              title="Zerar pedidos de demonstração para iniciar turno real"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Zerar Painel</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -723,9 +759,11 @@ const OrderCard: React.FC<OrderCardProps> = ({
           </span>
         </div>
 
-        <span className="text-[11px] text-orange-500 font-semibold flex items-center gap-1">
+        <span className="text-[11px] text-orange-500 font-semibold flex items-center gap-1 tabular-nums">
           <Clock className="w-3 h-3" />
-          {order.criadoEm}
+          {order.criadoEm && order.criadoEm.includes('T')
+            ? new Date(order.criadoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+            : order.criadoEm}
         </span>
       </div>
 

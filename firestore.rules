@@ -38,15 +38,14 @@ service cloud.firestore {
     function isValidStoreConfig(data) {
       return data.keys().hasAll(['nome', 'whatsapp']) &&
         data.nome is string && data.nome.size() <= 100 &&
-        data.whatsapp is string && data.whatsapp.size() <= 20;
+        data.whatsapp is string && data.whatsapp.size() <= 30;
     }
 
     function isValidProduct(data) {
-      return data.keys().hasAll(['id', 'nome', 'preco', 'categoriaId', 'disponivel']) &&
+      return data.keys().hasAll(['id', 'nome', 'preco', 'disponivel']) &&
         data.id is string && data.id.size() <= 64 &&
-        data.nome is string && data.nome.size() <= 100 &&
+        data.nome is string && data.nome.size() <= 150 &&
         data.preco is number && data.preco >= 0 &&
-        data.categoriaId is string && data.categoriaId.size() <= 50 &&
         data.disponivel is bool;
     }
 
@@ -56,7 +55,7 @@ service cloud.firestore {
         data.numeroPedido is number &&
         data.clienteNome is string && data.clienteNome.size() <= 100 &&
         data.clienteTelefone is string && data.clienteTelefone.size() <= 30 &&
-        data.status in ['pendente', 'preparando', 'pronto', 'entregue', 'cancelado'] &&
+        data.status in ['recebido', 'preparo', 'rota', 'concluido', 'cancelado', 'pendente', 'preparando', 'pronto', 'entregue'] &&
         data.total is number && data.total >= 0;
     }
 
@@ -84,20 +83,19 @@ service cloud.firestore {
 
     // Collection 3: Kitchen & Delivery Orders
     match /orders/{orderId} {
-      allow get: if true;
-      allow list: if isAdmin();
+      allow get, list: if true;
       allow create: if isValidId(orderId) && isValidOrder(incoming()) && incoming().id == orderId;
       allow update: if isAdmin() && isValidId(orderId) && 
-        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'atualizadoEm', 'updatedAt']);
       allow delete: if isAdmin() && isValidId(orderId);
     }
 
     // Collection 4: Admin Team Members
     match /admins/{userId} {
-      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow list: if isAdmin();
-      allow create, update: if (isSuperAdminEmail() || isAdmin()) && isValidId(userId) && isValidAdminUser(incoming());
-      allow delete: if isSuperAdminEmail() && request.auth.uid != userId;
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create, update: if (isSuperAdminEmail() || isAdmin() || (isSignedIn() && request.auth.uid == userId)) && isValidId(userId) && isValidAdminUser(incoming());
+      allow delete: if (isSuperAdminEmail() || isAdmin()) && request.auth.uid != userId;
     }
   }
 }

@@ -23,6 +23,7 @@ import { Product, StoreConfig, CartItem, CategoryId, Order } from '../types';
 import { CATEGORIAS_POR_SEGMENTO, SEGMENTOS_DISPONIVEIS } from '../data/segmentData';
 import { generatePixPayload } from '../utils/pixPayload';
 import { playOrderChime } from '../utils/soundAlert';
+import { syncOrderToFirestore } from '../services/firestoreSync';
 
 interface CustomerSimulatorProps {
   products: Product[];
@@ -293,9 +294,13 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
       total: cartTotal,
       formaPagamento: pagFormatado,
       status: 'recebido',
-      criadoEm: 'Agora mesmo',
+      criadoEm: new Date().toISOString(),
       tempoEstimadoMin: 35,
     };
+
+    syncOrderToFirestore(newOrder).catch((err) => {
+      console.warn('Erro ao sincronizar pedido do simulador no Firestore:', err);
+    });
 
     try {
       const existing = localStorage.getItem('omni_kds_orders');
@@ -306,7 +311,11 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
     } catch {}
 
     const text = encodeURIComponent(generateWhatsAppMessage());
-    window.open(`https://wa.me/${storeConfig.whatsapp}?text=${text}`, '_blank');
+    const link = document.createElement('a');
+    link.href = `https://wa.me/${storeConfig.whatsapp}?text=${text}`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.click();
   };
 
   return (

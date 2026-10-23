@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db, loginWithGoogle, logoutUser, handleFirestoreError, OperationType } from '../services/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db, loginWithGoogle, logoutUser } from '../services/firebase';
 
 interface AuthContextType {
   user: User | null;
@@ -33,17 +33,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        const isSuper = currentUser.email === SUPER_ADMIN_EMAIL;
+        const isSuper = currentUser.email?.toLowerCase() === SUPER_ADMIN_EMAIL;
         setIsSuperAdmin(isSuper);
-        
+
         if (isSuper) {
           setIsAdmin(true);
         } else {
           try {
-            const adminDoc = await getDoc(doc(db, 'admins', currentUser.uid));
-            setIsAdmin(adminDoc.exists());
+            const uidDocRef = doc(db, 'admins', currentUser.uid);
+            const uidDoc = await getDoc(uidDocRef);
+
+            if (uidDoc.exists()) {
+              setIsAdmin(true);
+            } else if (currentUser.email) {
+              const emailSanitized = currentUser.email.trim().toLowerCase().replace(/[^a-zA-Z0-9_-]/g, '_');
+              const emailDocRef = doc(db, 'admins', emailSanitized);
+              const emailDoc = await getDoc(emailDocRef);
+
+              if (emailDoc.exists()) {
+                setIsAdmin(true);
+                const data = emailDoc.data();
+                // Espelha sob o UID do usuário para validação direta nas Security Rules
+                await setDoc(uidDocRef, {
+                  uid: currentUser.uid,
+                  email: currentUser.email.toLowerCase(),
+                  role: data.role || 'admin',
+                  nome: data.nome || currentUser.displayName || currentUser.email.split('@')[0],
+                  criadoEm: data.criadoEm || new Date().toISOString(),
+                }, { merge: true });
+              } else {
+                setIsAdmin(false);
+              }
+            } else {
+              setIsAdmin(false);
+            }
           } catch (err) {
-            console.warn('Verificação de permissão admin em modo local:', err);
+            console.warn('Verificação de permissão admin:', err);
             setIsAdmin(false);
           }
         }

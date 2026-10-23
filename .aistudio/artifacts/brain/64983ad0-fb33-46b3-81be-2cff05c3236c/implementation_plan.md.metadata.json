@@ -1,6 +1,6 @@
 {
-  "summary":  "Plano de implementação para o sistema de Tema Claro/Escuro independente (Painel Admin e Cardápio do Cliente), campainha sonora para novos pedidos no KDS da cozinha, arquitetura de persistência e sincronização em nuvem em tempo real (Firebase Firestore) e checklist de engenharia de software para implantação em cliente real do zero.",
-  "updatedAt":  "2026-10-23T12:31:47.912015106Z",
+  "summary":  "Plano de implementação para finalizar a sincronização em tempo real do cardápio (produtos), configurações da loja, pedidos do simulador e gestão de administradores e estabelecimentos no Cloud Firestore, substituindo a dependência exclusiva do armazenamento local.",
+  "updatedAt":  "2026-10-23T18:27:32.139678302Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, 
   Grid, 
@@ -30,11 +30,26 @@ import { OrdersKdsView } from './components/OrdersKdsView';
 import { InventoryView } from './components/InventoryView';
 import { CustomizationView } from './components/CustomizationView';
 import { ClientOnboardingModal } from './components/ClientOnboardingModal';
+import { AdminTeamModal } from './components/AdminTeamModal';
+import { PublicStorefrontView } from './components/PublicStorefrontView';
 import { PaymentMethodsConfig, CartItem } from './types';
 import { useTheme } from './context/ThemeContext';
+import { useAuth } from './context/AuthContext';
+import {
+  subscribeToStoreConfig,
+  syncStoreConfigToFirestore,
+  subscribeToProducts,
+  syncProductToFirestore,
+  deleteProductFromFirestore,
+  syncProductsBatchToFirestore,
+  clearAllOrdersInFirestore,
+} from './services/firestoreSync';
 
 export default function App() {
   const { isDark } = useTheme();
+  const { isAdmin } = useAuth();
+  const hasSeededConfigRef = useRef(false);
+  const hasSeededProductsRef = useRef(false);
   const [storeConfig, setStoreConfig] = useState<StoreConfig>(() => {
     try {
       const saved = localStorage.getItem('omni_delivery_config');
@@ -71,8 +86,20 @@ export default function App() {
   const currentSegmentConfig = SEGMENTOS_DISPONIVEIS.find((s) => s.id === currentSegment) || SEGMENTOS_DISPONIVEIS[0];
   const categoriasDoSegmento = CATEGORIAS_POR_SEGMENTO[currentSegment] || CATEGORIAS_POR_SEGMENTO.hamburgueria;
 
+  // Check URL query parameters for Public Customer Menu (?modo=cardapio) or Kitchen KDS (?modo=kds)
+  const initialUrlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const initialModo = initialUrlParams?.get('modo');
+
+  const [isPublicStorefront, setIsPublicStorefront] = useState<boolean>(
+    initialModo === 'cardapio' || initialModo === 'cliente'
+  );
+  const [openedFromAdmin, setOpenedFromAdmin] = useState<boolean>(false);
+
   // Active navigation tab
-  const [activeTab, setActiveTab] = useState<AppTab>('produtos');
+  const [activeTab, setActiveTab] = useState<AppTab>(() => {
+    if (initialModo === 'kds') return 'pedidos';
+    return 'producao';
+  });
 
   // Filter & Search states
   const [searchQuery, setSearchQuery] = useState('');
@@ -90,6 +117,7 @@ export default function App() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isKitchenReceiptOpen, setIsKitchenReceiptOpen] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+  const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
 
   // Kitchen receipt dynamic order data
   const [kitchenReceiptData, setKitchenReceiptData] = useState<{
@@ -112,27 +140,123 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3200);
   };
 
-  // Persist products to localStorage
-  const saveProducts = (newProducts: Product[]) => {
+  // Real-time Firestore synchronization for StoreConfig and Products across all devices
+  useEffect(() => {
+    const unsubscribeConfig = subscribeToStoreConfig(
+      (cloudConfig, exists) => {
+        if (exists && cloudConfig) {
+          setStoreConfig(cloudConfig);
+          try {
+            localStorage.setItem('omni_delivery_config', JSON.stringify(cloudConfig));
+          } catch {}
+        } else if (!exists && isAdmin && !hasSeededConfigRef.current) {
+          hasSeededConfigRef.current = true;
+          syncStoreConfigToFirestore(storeConfig).catch((err) => {
+            console.warn('Falha ao inicializar store_config no Firestore:', err);
+          });
+        }
+      },
+      (err) => {
+        console.warn('Leitura de configuração no Firestore:', err);
+      }
+    );
+
+    const unsubscribeProducts = subscribeToProducts(
+      (cloudProducts, isEmpty) => {
+        if (!isEmpty && cloudProducts.length > 0) {
+          setProducts(cloudProducts);
+          try {
+            localStorage.setItem('omni_delivery_products', JSON.stringify(cloudProducts));
+          } catch {}
+        } else if (isEmpty && isAdmin && !hasSeededProductsRef.current) {
+          hasSeededProductsRef.current = true;
+          syncProductsBatchToFirestore(products, false).catch((err) => {
+            console.warn('Falha ao inicializar produtos no Firestore:', err);
+          });
+        }
+      },
+      (err) => {
+        console.warn('Leitura de produtos no Firestore:', err);
+      }
+    );
+
+    return () => {
+      unsubscribeConfig();
+      unsubscribeProducts();
+    };
+  }, [isAdmin]);
+
+  // Persist products to state, cache, and Firestore batch
+  const saveProducts = (newProducts: Product[], replaceAllInCloud: boolean = false) => {
     setProducts(newProducts);
     try {
       localStorage.setItem('omni_delivery_products', JSON.stringify(newProducts));
     } catch (e) {}
+
+    if (isAdmin) {
+      syncProductsBatchToFirestore(newProducts, replaceAllInCloud).catch((err) => {
+        console.warn('Erro ao sincronizar lote de produtos no Firestore:', err);
+      });
+    }
   };
 
-  // Persist store config
+  // Persist a single product mutation to state, cache, and Firestore
+  const saveSingleProductMutation = (newProducts: Product[], changedProduct: Product) => {
+    setProducts(newProducts);
+    try {
+      localStorage.setItem('omni_delivery_products', JSON.stringify(newProducts));
+    } catch (e) {}
+
+    if (isAdmin) {
+      syncProductToFirestore(changedProduct).catch((err) => {
+        console.warn('Erro ao sincronizar produto no Firestore:', err);
+      });
+    }
+  };
+
+  // Persist store config to state, cache, and Firestore
   const saveStoreConfig = (newConfig: StoreConfig) => {
     setStoreConfig(newConfig);
     try {
       localStorage.setItem('omni_delivery_config', JSON.stringify(newConfig));
     } catch (e) {}
+
+    if (isAdmin) {
+      syncStoreConfigToFirestore(newConfig).catch((err) => {
+        console.warn('Erro ao sincronizar configuração da loja no Firestore:', err);
+      });
+    }
+  };
+
+  // Force full cloud synchronization on demand
+  const handleForceSyncCloud = async () => {
+    try {
+      await syncStoreConfigToFirestore(storeConfig);
+      await syncProductsBatchToFirestore(products, true);
+      showToast('Catálogo e configurações sincronizados no Firestore com sucesso!');
+    } catch (err) {
+      console.error('Erro ao sincronizar manualmente:', err);
+      showToast('Verifique sua autenticação de administrador para gravar na nuvem.');
+    }
+  };
+
+  // Clear demo orders in Firestore and localStorage to start clean operation
+  const handleClearDemoOrders = async () => {
+    try {
+      localStorage.setItem('omni_kds_orders_cleared', 'true');
+      localStorage.setItem('omni_kds_orders', JSON.stringify([]));
+      await clearAllOrdersInFirestore();
+      showToast('Pedidos de demonstração zerados! Painel pronto para pedidos reais.');
+    } catch (err) {
+      console.warn('Erro ao zerar pedidos de demonstração:', err);
+      showToast('Pedidos locais zerados para operação real!');
+    }
   };
 
   // Segment Switching Handler
   const handleSelectSegment = (segmentId: SegmentId, loadSampleData: boolean) => {
     const segInfo = SEGMENTOS_DISPONIVEIS.find((s) => s.id === segmentId) || SEGMENTOS_DISPONIVEIS[0];
 
-    // Name suggestions for commercial demo
     const nomesSugeridos: { [key in SegmentId]: { nome: string; slogan: string } } = {
       hamburgueria: { nome: 'Max Hamburguer', slogan: 'Hambúrgueres Artesanais na Brasa' },
       pizzaria: { nome: 'Pizzaria Bella Napoli', slogan: 'Pizzas Artesanais no Forno a Lenha' },
@@ -156,12 +280,11 @@ export default function App() {
 
     if (loadSampleData) {
       const presetProducts = PRODUTOS_PRESETS_SEGMENTO[segmentId] || [];
-      saveProducts(presetProducts);
-      showToast(`Segmento alterado para ${segInfo.nome} com cardápio modelo carregado!`);
+      saveProducts(presetProducts, true);
+      showToast(`Segmento alterado para ${segInfo.nome} e sincronizado na nuvem!`);
     } else {
-      // Keep existing products, just update their segment tag
       const adapted = products.map((p) => ({ ...p, segmento: segmentId }));
-      saveProducts(adapted);
+      saveProducts(adapted, false);
       showToast(`Segmento alterado para ${segInfo.nome}!`);
     }
 
@@ -174,12 +297,12 @@ export default function App() {
     let updated: Product[];
     if (exists) {
       updated = products.map((p) => (p.id === product.id ? product : p));
-      showToast(`"${product.nome}" atualizado com sucesso!`);
+      showToast(`"${product.nome}" atualizado e sincronizado no Firestore!`);
     } else {
       updated = [product, ...products];
-      showToast(`Novo item "${product.nome}" cadastrado no cardápio!`);
+      showToast(`Novo item "${product.nome}" salvo no Firestore!`);
     }
-    saveProducts(updated);
+    saveSingleProductMutation(updated, product);
   };
 
   // Duplicate product
@@ -192,8 +315,8 @@ export default function App() {
       criadoEm: new Date().toISOString(),
     };
     const updated = [duplicated, ...products];
-    saveProducts(updated);
-    showToast(`Cópia criada para edição rápida!`);
+    saveSingleProductMutation(updated, duplicated);
+    showToast(`Cópia criada e sincronizada na nuvem!`);
     setEditingProduct(duplicated);
     setIsProductModalOpen(true);
   };
@@ -201,47 +324,66 @@ export default function App() {
   // Delete product
   const handleDeleteProduct = (id: string) => {
     const prod = products.find((p) => p.id === id);
-    if (confirm(`Excluir "${prod?.nome || 'o item'}" do cardápio?`)) {
-      const updated = products.filter((p) => p.id !== id);
-      saveProducts(updated);
-      showToast('Item excluído do cardápio.');
+    const updated = products.filter((p) => p.id !== id);
+    setProducts(updated);
+    try {
+      localStorage.setItem('omni_delivery_products', JSON.stringify(updated));
+    } catch (e) {}
+
+    if (isAdmin) {
+      deleteProductFromFirestore(id).catch((err) => {
+        console.warn('Erro ao excluir produto do Firestore:', err);
+      });
     }
+    showToast(`"${prod?.nome || 'Item'}" excluído do cardápio e da nuvem.`);
   };
 
   // 1-Click Toggle Availability
   const handleToggleDisponivel = (id: string) => {
+    let targetProduct: Product | null = null;
     const updated = products.map((p) => {
       if (p.id === id) {
         const novoStatus = !p.disponivel;
-        showToast(novoStatus ? `"${p.nome}" reativado!` : `"${p.nome}" marcado como ESGOTADO.`);
-        return { ...p, disponivel: novoStatus };
+        showToast(novoStatus ? `"${p.nome}" reativado na nuvem!` : `"${p.nome}" marcado como ESGOTADO.`);
+        targetProduct = { ...p, disponivel: novoStatus };
+        return targetProduct;
       }
       return p;
     });
-    saveProducts(updated);
+    if (targetProduct) {
+      saveSingleProductMutation(updated, targetProduct);
+    }
   };
 
   // Toggle Featured
   const handleToggleDestaque = (id: string) => {
+    let targetProduct: Product | null = null;
     const updated = products.map((p) => {
       if (p.id === id) {
-        return { ...p, destaque: !p.destaque };
+        targetProduct = { ...p, destaque: !p.destaque };
+        return targetProduct;
       }
       return p;
     });
-    saveProducts(updated);
+    if (targetProduct) {
+      saveSingleProductMutation(updated, targetProduct);
+    }
   };
 
   // Quick price update inline
   const handleQuickUpdatePrice = (id: string, newPrice: number) => {
+    let targetProduct: Product | null = null;
     const updated = products.map((p) => {
       if (p.id === id) {
-        return { ...p, preco: newPrice };
+        targetProduct = { ...p, preco: newPrice };
+        return targetProduct;
       }
       return p;
     });
-    saveProducts(updated);
-    showToast('Preço atualizado!');
+    if (targetProduct) {
+      saveSingleProductMutation(updated, targetProduct);
+      showToast('Preço atualizado e sincronizado no Firestore!');
+    }
   };
 
   // Batch price adjustment
@@ -258,20 +400,20 @@ export default function App() {
       }
       return p;
     });
-    saveProducts(updated);
-    showToast(`Preços atualizados com sucesso!`);
+    saveProducts(updated, false);
+    showToast(`Preços atualizados em lote no Firestore!`);
   };
 
   // Confirm today's menu
   const handleConfirmTodayMenu = (updatedProducts: Product[], message: string) => {
-    saveProducts(updatedProducts);
+    saveProducts(updatedProducts, false);
     const newConfig: StoreConfig = {
       ...storeConfig,
       cardapioConfirmadoHoje: true,
       ultimaConfirmacao: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
     };
     saveStoreConfig(newConfig);
-    showToast('Cardápio do dia 100% confirmado para os clientes!');
+    showToast('Cardápio do dia 100% confirmado e sincronizado na nuvem!');
   };
 
   // Filter products
@@ -297,6 +439,23 @@ export default function App() {
   const innerSurface = isDark 
     ? 'bg-neutral-950 border-neutral-800 text-white' 
     : 'bg-neutral-100 border-neutral-200 text-neutral-900';
+
+  // If running in Public Customer Storefront mode (?modo=cardapio), render clean customer digital menu
+  if (isPublicStorefront) {
+    return (
+      <PublicStorefrontView
+        products={products}
+        storeConfig={storeConfig}
+        showAdminReturnBar={openedFromAdmin || isAdmin}
+        onExitPublicMode={() => {
+          setIsPublicStorefront(false);
+          if (typeof window !== 'undefined' && window.location.search) {
+            window.history.replaceState({}, '', window.location.pathname);
+          }
+        }}
+      />
+    );
+  }
 
   return (
     <div className={`min-h-screen ${isDark ? 'bg-neutral-950 text-neutral-100' : 'bg-neutral-50 text-neutral-900'} flex flex-col font-sans transition-colors duration-200 selection:bg-orange-500 selection:text-white`}>
@@ -324,6 +483,7 @@ export default function App() {
         onOpenPaymentModal={() => setIsPaymentModalOpen(true)}
         onOpenKitchenReceipt={() => setIsKitchenReceiptOpen(true)}
         onOpenOnboarding={() => setIsOnboardingOpen(true)}
+        onOpenTeamModal={() => setIsTeamModalOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -719,7 +879,29 @@ export default function App() {
         {activeTab === 'producao' && (
           <ProductionDeployGuide
             storeConfig={storeConfig}
+            productsCount={products.length}
             onOpenExport={() => setIsExportOpen(true)}
+            onOpenOnboarding={() => setIsOnboardingOpen(true)}
+            onOpenTeamModal={() => setIsTeamModalOpen(true)}
+            onOpenPublicStorefront={() => {
+              setOpenedFromAdmin(true);
+              setIsPublicStorefront(true);
+            }}
+            onOpenKdsMode={() => setActiveTab('pedidos')}
+            onToggleStoreOpen={() => {
+              const updated: StoreConfig = {
+                ...storeConfig,
+                aberto: !storeConfig.aberto,
+              };
+              saveStoreConfig(updated);
+              showToast(
+                updated.aberto
+                  ? '🟢 Loja ABERTA para receber pedidos reais na nuvem!'
+                  : '🔴 Loja FECHADA temporariamente para novos pedidos.'
+              );
+            }}
+            onForceSyncCloud={handleForceSyncCloud}
+            onClearDemoOrders={handleClearDemoOrders}
           />
         )}
 
@@ -817,14 +999,27 @@ export default function App() {
         isOpen={isOnboardingOpen}
         onClose={() => setIsOnboardingOpen(false)}
         onComplete={(newConfig, loadSample) => {
+          hasSeededConfigRef.current = true;
+          hasSeededProductsRef.current = true;
           saveStoreConfig(newConfig);
           if (loadSample) {
             const sample = PRODUTOS_PRESETS_SEGMENTO[newConfig.segmento] || [];
-            saveProducts(sample);
+            saveProducts(sample, true);
+          } else {
+            saveProducts([], true);
           }
-          showToast(`Novo cliente "${newConfig.nome}" configurado e lançado com sucesso!`);
-          setActiveTab('cardapio');
+          handleClearDemoOrders();
+          showToast(`Estabelecimento "${newConfig.nome}" implantado e sincronizado no Firestore!`);
+          setActiveTab('producao');
         }}
+      />
+
+      {/* ADMIN TEAM & CLOUD FIRESTORE MODAL */}
+      <AdminTeamModal
+        isOpen={isTeamModalOpen}
+        onClose={() => setIsTeamModalOpen(false)}
+        showToast={showToast}
+        onForceSyncCloud={handleForceSyncCloud}
       />
 
       {/* KITCHEN RECEIPT MODAL */}
