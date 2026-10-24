@@ -38,6 +38,8 @@ export interface ProductOptionItem {
   id: string;
   nome: string;
   preco: number;
+  disponivel?: boolean;
+  descricao?: string;
 }
 
 export interface ProductOptionGroup {
@@ -58,6 +60,8 @@ export interface Product {
   segmento?: SegmentId;
   preco: number;
   precoPromocional?: number;
+  custoUnitario?: number;
+  codigoPdv?: string;
   descricao: string;
   foto: string;
   disponivel: boolean;
@@ -65,6 +69,11 @@ export interface Product {
   selo?: string;
   tempoPreparoMin?: number;
   unidadeMedida?: string; // "unidade", "fatia", "porção", "500ml", "kg"
+  // Ficha Técnica & Disponibilidade Avançada
+  pesoGramas?: string; // ex: "350g", "500ml"
+  porcaoPessoas?: string; // ex: "Individual (1 pessoa)", "Serve 2 pessoas"
+  alergenos?: string[]; // ex: ["Contém Glúten", "Contém Lactose", "Vegano"]
+  diasDisponiveis?: string[]; // ex: ["seg", "ter", "qua", "qui", "sex", "sab", "dom"]
   opcoes?: ProductOptionGroup[];
   // Regras de Pizza (quando segmento for pizzaria)
   permiteMeioAMeio?: boolean;
@@ -122,6 +131,7 @@ export interface CouponItem {
 
 export interface StoreConfig {
   id?: string;
+  slug?: string; // Nome personalizado do link do cardápio (ex: max-burger, bella-napoli)
   segmento: SegmentId;
   nome: string;
   slogan: string;
@@ -138,6 +148,7 @@ export interface StoreConfig {
   cardapioConfirmadoHoje: boolean;
   ultimaConfirmacao?: string;
   pagamentos?: PaymentMethodsConfig;
+  categoriasCustomizadas?: CategoryInfo[]; // Categorias criadas pelo gerente deste estabelecimento
   
   // Vínculo de Gerente e Controle Comercial SaaS (Gerente da Plataforma)
   gerenteEmail?: string;

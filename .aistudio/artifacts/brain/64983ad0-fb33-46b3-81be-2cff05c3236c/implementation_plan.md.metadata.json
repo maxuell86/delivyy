@@ -1,6 +1,6 @@
 {
-  "summary":  "Plano de implementação para finalizar a sincronização em tempo real do cardápio (produtos), configurações da loja, pedidos do simulador e gestão de administradores e estabelecimentos no Cloud Firestore, substituindo a dependência exclusiva do armazenamento local.",
-  "updatedAt":  "2026-10-23T18:27:32.139678302Z",
+  "summary":  "Plano de implementação para o cadastro completo de produtos pelo gerente (upload direto de fotos do celular/computador, ficha técnica detalhada, categorias personalizadas e grupos avançados de opcionais) e central de link exclusivo do cardápio com slug personalizado, QR Code e compartilhamento no WhatsApp.",
+  "updatedAt":  "2026-10-24T22:14:38.830372802Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

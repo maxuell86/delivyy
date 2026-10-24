@@ -17,12 +17,15 @@ import {
   PlusCircle,
   Bike,
   Utensils,
+  QrCode,
+  Share2,
 } from 'lucide-react';
-import { Product, StoreConfig, Order, CategoryId } from '../types';
+import { Product, StoreConfig, Order, CategoryId, CategoryInfo } from '../types';
 import { CATEGORIAS_POR_SEGMENTO } from '../data/segmentData';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { subscribeToOrders } from '../services/firestoreSync';
+import { buildExclusiveMenuUrl } from './ExclusiveMenuLinkModal';
 
 interface StoreManagerOperationViewProps {
   storeId: string;
@@ -36,6 +39,7 @@ interface StoreManagerOperationViewProps {
   onOpenChecklist: () => void;
   onOpenKitchenReceipt: () => void;
   onOpenPublicStorefront: () => void;
+  onOpenExclusiveLinkModal?: () => void;
   showToast: (msg: string) => void;
 }
 
@@ -58,6 +62,7 @@ export const StoreManagerOperationView: React.FC<StoreManagerOperationViewProps>
   onOpenChecklist,
   onOpenKitchenReceipt,
   onOpenPublicStorefront,
+  onOpenExclusiveLinkModal,
   showToast,
 }) => {
   const { isDark } = useTheme();
@@ -69,7 +74,13 @@ export const StoreManagerOperationView: React.FC<StoreManagerOperationViewProps>
   const [copiedUrl, setCopiedUrl] = useState(false);
 
   const currentSegment = storeConfig.segmento || 'hamburgueria';
-  const categorias = CATEGORIAS_POR_SEGMENTO[currentSegment] || CATEGORIAS_POR_SEGMENTO.hamburgueria;
+  const categoriasBase = CATEGORIAS_POR_SEGMENTO[currentSegment] || CATEGORIAS_POR_SEGMENTO.hamburgueria;
+  const categorias: CategoryInfo[] = React.useMemo(() => {
+    const map = new Map<string, CategoryInfo>();
+    categoriasBase.forEach((c) => map.set(c.id, c));
+    (storeConfig.categoriasCustomizadas || []).forEach((c) => map.set(c.id, c));
+    return Array.from(map.values());
+  }, [categoriasBase, storeConfig.categoriasCustomizadas]);
 
   useEffect(() => {
     const unsubscribe = subscribeToOrders(
@@ -82,17 +93,24 @@ export const StoreManagerOperationView: React.FC<StoreManagerOperationViewProps>
     return () => unsubscribe();
   }, [storeId]);
 
-  const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maxdelivery.app';
-  const storeMenuUrl =
-    storeId && storeId !== 'default'
-      ? `${originUrl}/?modo=cardapio&loja=${encodeURIComponent(storeId)}`
-      : `${originUrl}/?modo=cardapio`;
+  const storeMenuUrl = buildExclusiveMenuUrl(storeId, storeConfig);
 
   const handleCopyMenuUrl = () => {
     navigator.clipboard.writeText(storeMenuUrl);
     setCopiedUrl(true);
-    showToast('Link do cardápio copiado para compartilhar com clientes!');
+    showToast('Link exclusivo do cardápio copiado para compartilhar com clientes!');
     setTimeout(() => setCopiedUrl(false), 2500);
+  };
+
+  const handleShareWhatsApp = () => {
+    const text = encodeURIComponent(
+      `Olá! Faça seu pedido direto pelo nosso Cardápio Digital exclusivo de *${storeConfig.nome}*:\n${storeMenuUrl}`
+    );
+    const link = document.createElement('a');
+    link.href = `https://wa.me/?text=${text}`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.click();
   };
 
   const handleToggleStoreOpen = () => {
@@ -356,32 +374,57 @@ export const StoreManagerOperationView: React.FC<StoreManagerOperationViewProps>
         {/* Card 4: Link Direto do Cardápio do Estabelecimento */}
         <div className={`border rounded-2xl p-5 flex flex-col justify-between ${surfaceClass}`}>
           <div className="flex items-center justify-between text-xs text-neutral-400">
-            <span className="font-semibold">Link do Cardápio Digital</span>
+            <span className="font-semibold">Link Exclusivo do Cardápio</span>
             <ShoppingBag className="w-4 h-4 text-emerald-500" />
           </div>
-          <div className="my-3">
-            <p className="text-xs text-neutral-400 mb-1.5">
-              Envie aos clientes no WhatsApp ou fixe na bio do Instagram:
-            </p>
+          <div className="my-2.5">
+            <div className="flex items-center justify-between text-[11px] text-neutral-400 mb-1">
+              <span>Link exclusivo da loja:</span>
+              {storeConfig.slug && (
+                <span className="text-emerald-500 font-mono font-bold">/{storeConfig.slug}</span>
+              )}
+            </div>
             <div className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-mono truncate ${subtleSurfaceClass}`}>
               {storeMenuUrl}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={handleCopyMenuUrl}
-              className="py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer whitespace-nowrap"
-            >
-              {copiedUrl ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedUrl ? 'Copiado!' : 'Copiar Link'}</span>
-            </button>
-            <button
-              onClick={onOpenPublicStorefront}
-              className={`py-2 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer whitespace-nowrap ${subtleSurfaceClass}`}
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              <span>Abrir Loja</span>
-            </button>
+          <div className="space-y-1.5">
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                onClick={handleCopyMenuUrl}
+                className="py-1.5 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+              >
+                {copiedUrl ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedUrl ? 'Copiado!' : 'Copiar Link'}</span>
+              </button>
+              <button
+                onClick={handleShareWhatsApp}
+                className="py-1.5 px-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>WhatsApp</span>
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {onOpenExclusiveLinkModal && (
+                <button
+                  onClick={onOpenExclusiveLinkModal}
+                  className={`py-1.5 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 transition cursor-pointer whitespace-nowrap ${subtleSurfaceClass}`}
+                >
+                  <QrCode className="w-3.5 h-3.5 text-orange-500" />
+                  <span>QR Code &amp; Link</span>
+                </button>
+              )}
+              <button
+                onClick={onOpenPublicStorefront}
+                className={`py-1.5 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 transition cursor-pointer whitespace-nowrap ${
+                  onOpenExclusiveLinkModal ? '' : 'col-span-2'
+                } ${subtleSurfaceClass}`}
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Abrir Cardápio</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

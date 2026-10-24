@@ -9,9 +9,11 @@ import {
   Lock,
   AlertCircle,
   Copy,
-  ExternalLink
+  ExternalLink,
+  QrCode,
+  Share2
 } from 'lucide-react';
-import { Product, StoreConfig, CategoryId, SegmentId, ViewPerspective, CartItem } from './types';
+import { Product, StoreConfig, CategoryId, CategoryInfo, SegmentId, ViewPerspective, CartItem } from './types';
 import { PRODUTOS_PRESETS_SEGMENTO, SEGMENTOS_DISPONIVEIS, CATEGORIAS_POR_SEGMENTO } from './data/segmentData';
 import { Header, AppTab } from './components/Header';
 import { ProductCard } from './components/ProductCard';
@@ -35,6 +37,7 @@ import { ClientOnboardingModal } from './components/ClientOnboardingModal';
 import { AdminTeamModal } from './components/AdminTeamModal';
 import { PublicStorefrontView } from './components/PublicStorefrontView';
 import { StoreManagerOperationView } from './components/StoreManagerOperationView';
+import { ExclusiveMenuLinkModal, buildExclusiveMenuUrl, sanitizeMenuSlug } from './components/ExclusiveMenuLinkModal';
 import { useTheme } from './context/ThemeContext';
 import { useAuth } from './context/AuthContext';
 import { doc, setDoc } from 'firebase/firestore';
@@ -142,7 +145,13 @@ export default function App() {
 
   const currentSegment = storeConfig.segmento || 'hamburgueria';
   const currentSegmentConfig = SEGMENTOS_DISPONIVEIS.find((s) => s.id === currentSegment) || SEGMENTOS_DISPONIVEIS[0];
-  const categoriasDoSegmento = CATEGORIAS_POR_SEGMENTO[currentSegment] || CATEGORIAS_POR_SEGMENTO.hamburgueria;
+  const categoriasBase = CATEGORIAS_POR_SEGMENTO[currentSegment] || CATEGORIAS_POR_SEGMENTO.hamburgueria;
+  const categoriasDoSegmento: CategoryInfo[] = React.useMemo(() => {
+    const map = new Map<string, CategoryInfo>();
+    categoriasBase.forEach((c) => map.set(c.id, c));
+    (storeConfig.categoriasCustomizadas || []).forEach((c) => map.set(c.id, c));
+    return Array.from(map.values());
+  }, [categoriasBase, storeConfig.categoriasCustomizadas]);
 
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<AppTab>(() => {
@@ -167,6 +176,7 @@ export default function App() {
   const [isKitchenReceiptOpen, setIsKitchenReceiptOpen] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
+  const [isExclusiveLinkModalOpen, setIsExclusiveLinkModalOpen] = useState(false);
 
   // Kitchen receipt dynamic order data
   const [kitchenReceiptData, setKitchenReceiptData] = useState<{
@@ -189,13 +199,25 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3200);
   };
 
-  // Subscribe to all establishments list for Platform Manager
+  // Subscribe to all establishments list for Platform Manager & Custom Slug Resolution
   useEffect(() => {
     const unsubscribeAll = subscribeToAllStores((stores) => {
       setAllStores(stores);
+      // Resolve custom slug in URL (?loja=meu-slug) to the actual store document ID
+      if (rawLojaUrlParam && stores.length > 0) {
+        const cleanedParam = sanitizeMenuSlug(rawLojaUrlParam);
+        const matchedBySlug = stores.find(
+          (s) =>
+            (s.slug && sanitizeMenuSlug(s.slug) === cleanedParam) ||
+            (s.id && sanitizeStoreId(s.id) === sanitizeStoreId(rawLojaUrlParam))
+        );
+        if (matchedBySlug && matchedBySlug.id && matchedBySlug.id !== selectedStoreId) {
+          setSelectedStoreId(matchedBySlug.id);
+        }
+      }
     });
     return () => unsubscribeAll();
-  }, []);
+  }, [rawLojaUrlParam]);
 
   // Real-time Firestore synchronization for StoreConfig and Products isolated by activeStoreId
   useEffect(() => {
@@ -655,6 +677,7 @@ export default function App() {
               setOpenedFromAdmin(true);
               setIsPublicStorefront(true);
             }}
+            onOpenExclusiveLinkModal={() => setIsExclusiveLinkModalOpen(true)}
             showToast={showToast}
           />
         )}
@@ -682,15 +705,19 @@ export default function App() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                {/* Direct Exclusive Menu Link Copy & Preview */}
+                {/* Direct Exclusive Menu Link Copy, QR Code & Preview */}
                 {(() => {
-                  const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maxdelivery.app';
-                  const storeMenuUrl =
-                    activeStoreId && activeStoreId !== 'default'
-                      ? `${originUrl}/?modo=cardapio&loja=${encodeURIComponent(activeStoreId)}`
-                      : `${originUrl}/?modo=cardapio`;
+                  const storeMenuUrl = buildExclusiveMenuUrl(activeStoreId, storeConfig);
                   return (
                     <>
+                      <button
+                        type="button"
+                        onClick={() => setIsExclusiveLinkModalOpen(true)}
+                        className="px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+                      >
+                        <QrCode className="w-3.5 h-3.5" />
+                        <span>Link Personalizado, QR Code &amp; WhatsApp</span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
@@ -701,7 +728,7 @@ export default function App() {
                         title={storeMenuUrl}
                       >
                         <Copy className="w-3.5 h-3.5" />
-                        <span>Copiar Link Deste Cardápio</span>
+                        <span>Copiar Link</span>
                       </button>
                       <button
                         type="button"
@@ -1157,11 +1184,35 @@ export default function App() {
         isOpen={isProductModalOpen}
         currentSegment={currentSegment}
         product={editingProduct}
+        customCategories={storeConfig.categoriasCustomizadas || []}
+        onUpdateCustomCategories={(newCustomCats) => {
+          const updatedCfg: StoreConfig = {
+            ...storeConfig,
+            categoriasCustomizadas: newCustomCats,
+          };
+          saveStoreConfig(updatedCfg);
+          showToast('Categorias personalizadas do estabelecimento atualizadas!');
+        }}
         onClose={() => {
           setIsProductModalOpen(false);
           setEditingProduct(null);
         }}
         onSave={handleSaveProduct}
+      />
+
+      {/* EXCLUSIVE MENU LINK, QR CODE & WHATSAPP MODAL */}
+      <ExclusiveMenuLinkModal
+        isOpen={isExclusiveLinkModalOpen}
+        storeId={activeStoreId}
+        storeConfig={storeConfig}
+        allStores={allStores}
+        onClose={() => setIsExclusiveLinkModalOpen(false)}
+        onSaveConfig={(cfg) => saveStoreConfig(cfg)}
+        onOpenPublicStorefront={() => {
+          setOpenedFromAdmin(true);
+          setIsPublicStorefront(true);
+        }}
+        showToast={showToast}
       />
 
       {/* DAILY CHECKLIST MODAL */}

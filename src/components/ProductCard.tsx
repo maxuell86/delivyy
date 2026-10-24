@@ -118,13 +118,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       {/* Content Area */}
       <div className="p-4 flex-1 flex flex-col justify-between">
         <div>
-          {/* Category & Prep time */}
+          {/* Category, PDV Code & Prep time */}
           <div className="flex items-center justify-between text-xs text-neutral-400 mb-1.5 font-medium">
-            <span className="uppercase tracking-wider font-bold text-orange-400">
-              {product.categoria}
-            </span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="uppercase tracking-wider font-bold text-orange-400 truncate">
+                {product.categoria}
+              </span>
+              {product.codigoPdv && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="font-mono text-[11px] text-neutral-500">{product.codigoPdv}</span>
+                </>
+              )}
+            </div>
             {product.tempoPreparoMin && (
-              <span className="flex items-center gap-1 text-neutral-400">
+              <span className="flex items-center gap-1 text-neutral-400 shrink-0">
                 <Clock className="w-3 h-3 text-neutral-500" />
                 ~{product.tempoPreparoMin} min
               </span>
@@ -140,6 +148,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <p className="text-xs text-neutral-400 line-clamp-2 mt-1.5 leading-relaxed">
             {product.descricao}
           </p>
+
+          {/* Technical Sheet Metadata (Weight, Serving Size, Allergens) */}
+          {(product.pesoGramas || product.porcaoPessoas || (product.alergenos && product.alergenos.length > 0)) && (
+            <div className="mt-2 pt-2 border-t border-neutral-800/60 flex flex-wrap items-center gap-1.5 text-[11px] text-neutral-400">
+              {product.pesoGramas && <span className="font-semibold text-neutral-300">{product.pesoGramas}</span>}
+              {product.pesoGramas && product.porcaoPessoas && <span aria-hidden="true">·</span>}
+              {product.porcaoPessoas && <span>{product.porcaoPessoas}</span>}
+              {product.alergenos && product.alergenos.length > 0 && (
+                <>
+                  {(product.pesoGramas || product.porcaoPessoas) && <span aria-hidden="true">·</span>}
+                  <span className="text-amber-400/90 truncate">{product.alergenos.slice(0, 2).join(' · ')}</span>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Options / Add-ons badge */}

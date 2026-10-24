@@ -49,7 +49,13 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
 }) => {
   const currentSegment = storeConfig.segmento || 'hamburgueria';
   const segmentConfig = SEGMENTOS_DISPONIVEIS.find((s) => s.id === currentSegment) || SEGMENTOS_DISPONIVEIS[0];
-  const categoriasDoSegmento = CATEGORIAS_POR_SEGMENTO[currentSegment] || CATEGORIAS_POR_SEGMENTO.hamburgueria;
+  const categoriasBase = CATEGORIAS_POR_SEGMENTO[currentSegment] || CATEGORIAS_POR_SEGMENTO.hamburgueria;
+  const categoriasDoSegmento = React.useMemo(() => {
+    const map = new Map();
+    categoriasBase.forEach((c) => map.set(c.id, c));
+    (storeConfig.categoriasCustomizadas || []).forEach((c) => map.set(c.id, c));
+    return Array.from(map.values());
+  }, [categoriasBase, storeConfig.categoriasCustomizadas]);
 
   const paymentConfig = storeConfig.pagamentos || {
     pixAtivo: true,
@@ -84,6 +90,7 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
   const [selectedOptions, setSelectedOptions] = useState<{ [groupId: string]: string[] }>({});
   const [itemNotes, setItemNotes] = useState('');
   const [segundoSaborPizza, setSegundoSaborPizza] = useState<string>('');
+  const [optionValidationError, setOptionValidationError] = useState<string | null>(null);
 
   const effectiveStoreId = storeConfig.id || 'default';
   const cartStorageKey = `omni_public_cart_${effectiveStoreId}`;
@@ -223,12 +230,14 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
     setModalQuantity(1);
     setItemNotes('');
     setSegundoSaborPizza('');
+    setOptionValidationError(null);
 
     const initialOptions: { [groupId: string]: string[] } = {};
     if (product.opcoes) {
       product.opcoes.forEach((grp) => {
-        if (grp.tipo === 'unico' && grp.itens.length > 0) {
-          initialOptions[grp.id] = [grp.itens[0].id];
+        const activeItems = grp.itens.filter((it) => it.disponivel !== false);
+        if (grp.tipo === 'unico' && grp.obrigatorio && activeItems.length > 0) {
+          initialOptions[grp.id] = [activeItems[0].id];
         } else {
           initialOptions[grp.id] = [];
         }
@@ -237,7 +246,8 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
     setSelectedOptions(initialOptions);
   };
 
-  const handleToggleOption = (groupId: string, itemId: string, isUnique: boolean) => {
+  const handleToggleOption = (groupId: string, itemId: string, isUnique: boolean, maxLimit?: number) => {
+    setOptionValidationError(null);
     const current = selectedOptions[groupId] || [];
     if (isUnique) {
       setSelectedOptions({ ...selectedOptions, [groupId]: [itemId] });
@@ -245,6 +255,10 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
       if (current.includes(itemId)) {
         setSelectedOptions({ ...selectedOptions, [groupId]: current.filter((id) => id !== itemId) });
       } else {
+        if (maxLimit && maxLimit > 0 && current.length >= maxLimit) {
+          setOptionValidationError(`Você pode escolher no máximo ${maxLimit} opção(ões) neste grupo.`);
+          return;
+        }
         setSelectedOptions({ ...selectedOptions, [groupId]: [...current, itemId] });
       }
     }
@@ -269,6 +283,22 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
 
   const handleAddToCart = () => {
     if (!activeProductModal) return;
+
+    // Validate mandatory and min/max option groups
+    if (activeProductModal.opcoes) {
+      for (const grp of activeProductModal.opcoes) {
+        const activeItems = grp.itens.filter((it) => it.disponivel !== false);
+        if (activeItems.length === 0) continue;
+        const selectedCount = (selectedOptions[grp.id] || []).length;
+        const minReq = Math.max(grp.obrigatorio ? 1 : 0, grp.minimo || 0);
+        if (minReq > 0 && selectedCount < minReq) {
+          setOptionValidationError(
+            `Por favor, selecione pelo menos ${minReq} opção(ões) em "${grp.titulo}".`
+          );
+          return;
+        }
+      }
+    }
 
     const unitPrice = calculateModalUnitPrice();
     const formattedOptions: { grupoTitulo: string; itemNome: string; itemPreco: number }[] = [];
@@ -837,6 +867,19 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
                       >
                         {product.descricao}
                       </p>
+                      {(product.pesoGramas || product.porcaoPessoas || (product.alergenos && product.alergenos.length > 0)) && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-[11px] text-neutral-400">
+                          {product.pesoGramas && <span className="font-semibold">{product.pesoGramas}</span>}
+                          {product.pesoGramas && product.porcaoPessoas && <span aria-hidden="true">·</span>}
+                          {product.porcaoPessoas && <span>{product.porcaoPessoas}</span>}
+                          {product.alergenos && product.alergenos.length > 0 && (
+                            <>
+                              {(product.pesoGramas || product.porcaoPessoas) && <span aria-hidden="true">·</span>}
+                              <span className="text-orange-400">{product.alergenos.slice(0, 2).join(' · ')}</span>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="mt-3 flex items-center justify-between">
@@ -936,10 +979,40 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
                 <p className={`text-xs mt-1 ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
                   {activeProductModal.descricao}
                 </p>
-                <p className="text-lg font-black text-emerald-500 mt-2">
+                {(activeProductModal.pesoGramas ||
+                  activeProductModal.porcaoPessoas ||
+                  (activeProductModal.alergenos && activeProductModal.alergenos.length > 0)) && (
+                  <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-neutral-400">
+                    {activeProductModal.pesoGramas && (
+                      <span className="font-bold text-neutral-300">{activeProductModal.pesoGramas}</span>
+                    )}
+                    {activeProductModal.pesoGramas && activeProductModal.porcaoPessoas && (
+                      <span aria-hidden="true">·</span>
+                    )}
+                    {activeProductModal.porcaoPessoas && <span>{activeProductModal.porcaoPessoas}</span>}
+                    {activeProductModal.alergenos && activeProductModal.alergenos.length > 0 && (
+                      <>
+                        {(activeProductModal.pesoGramas || activeProductModal.porcaoPessoas) && (
+                          <span aria-hidden="true">·</span>
+                        )}
+                        <span className="text-orange-400 font-semibold">
+                          {activeProductModal.alergenos.join(' · ')}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                )}
+                <p className="text-lg font-black text-emerald-500 mt-2 font-mono tabular-nums">
                   R$ {(activeProductModal.precoPromocional || activeProductModal.preco).toFixed(2).replace('.', ',')}
                 </p>
               </div>
+
+              {optionValidationError && (
+                <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{optionValidationError}</span>
+                </div>
+              )}
 
               {/* Half & Half Pizza Selector */}
               {activeProductModal.permiteMeioAMeio && (
@@ -972,55 +1045,77 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
 
               {/* Option Groups */}
               {activeProductModal.opcoes &&
-                activeProductModal.opcoes.map((grp) => (
-                  <div key={grp.id} className="space-y-2">
-                    <div
-                      className={`flex items-center justify-between py-1.5 px-3 rounded-lg ${
-                        isDark ? 'bg-neutral-950' : 'bg-neutral-100'
-                      }`}
-                    >
-                      <span className="text-xs font-black uppercase tracking-wide">{grp.titulo}</span>
-                      <span className="text-[10px] font-bold text-orange-500">
-                        {grp.obrigatorio ? 'Obrigatório' : 'Opcional'}
-                      </span>
-                    </div>
-                    <div className="space-y-1.5">
-                      {grp.itens.map((item) => {
-                        const isSelected = (selectedOptions[grp.id] || []).includes(item.id);
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => handleToggleOption(grp.id, item.id, grp.tipo === 'unico')}
-                            className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between text-xs transition cursor-pointer ${
-                              isSelected
-                                ? 'border-orange-500 bg-orange-500/10 font-bold'
-                                : isDark
-                                ? 'border-neutral-800 bg-neutral-950/60 text-neutral-300'
-                                : 'border-neutral-200 bg-white text-neutral-700'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <div
-                                className={`w-4 h-4 rounded flex items-center justify-center border ${
-                                  isSelected ? 'bg-orange-500 border-orange-500 text-neutral-950' : 'border-neutral-500'
-                                }`}
-                              >
-                                {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                activeProductModal.opcoes.map((grp) => {
+                  const activeItems = grp.itens.filter((it) => it.disponivel !== false);
+                  if (activeItems.length === 0) return null;
+                  const minReq = Math.max(grp.obrigatorio ? 1 : 0, grp.minimo || 0);
+                  const maxLim = grp.tipo === 'unico' ? 1 : grp.maximo;
+
+                  return (
+                    <div key={grp.id} className="space-y-2">
+                      <div
+                        className={`flex items-center justify-between py-1.5 px-3 rounded-lg ${
+                          isDark ? 'bg-neutral-950' : 'bg-neutral-100'
+                        }`}
+                      >
+                        <div>
+                          <span className="text-xs font-black uppercase tracking-wide block">{grp.titulo}</span>
+                          <span className="text-[10px] text-neutral-400">
+                            {grp.tipo === 'unico'
+                              ? 'Escolha 1 opção'
+                              : minReq > 0 && maxLim
+                              ? `Escolha de ${minReq} até ${maxLim}`
+                              : maxLim
+                              ? `Escolha até ${maxLim} opções`
+                              : 'Múltipla escolha'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-bold text-orange-500">
+                          {minReq > 0 ? `Obrigatório (Mín. ${minReq})` : 'Opcional'}
+                        </span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {activeItems.map((item) => {
+                          const isSelected = (selectedOptions[grp.id] || []).includes(item.id);
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() =>
+                                handleToggleOption(grp.id, item.id, grp.tipo === 'unico', maxLim)
+                              }
+                              className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between text-xs transition cursor-pointer ${
+                                isSelected
+                                  ? 'border-orange-500 bg-orange-500/10 font-bold'
+                                  : isDark
+                                  ? 'border-neutral-800 bg-neutral-950/60 text-neutral-300'
+                                  : 'border-neutral-200 bg-white text-neutral-700'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <div
+                                  className={`w-4 h-4 rounded flex items-center justify-center border ${
+                                    isSelected
+                                      ? 'bg-orange-500 border-orange-500 text-neutral-950'
+                                      : 'border-neutral-500'
+                                  }`}
+                                >
+                                  {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                </div>
+                                <span>{item.nome}</span>
                               </div>
-                              <span>{item.nome}</span>
-                            </div>
-                            {item.preco > 0 && (
-                              <span className="text-emerald-500 font-bold">
-                                + R$ {item.preco.toFixed(2).replace('.', ',')}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
+                              {item.preco > 0 && (
+                                <span className="text-emerald-500 font-bold font-mono tabular-nums">
+                                  + R$ {item.preco.toFixed(2).replace('.', ',')}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
               {/* Customer Item Notes */}
               <div>

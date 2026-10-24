@@ -1,107 +1,45 @@
-# Sincronização em Tempo Real no Cloud Firestore e Operação Multi-Dispositivo
+# Plano de Implementação: Cadastro Avançado de Produtos & Link Exclusivo do Cardápio
 
-Este plano finaliza a migração da persistência de dados da plataforma para o **Cloud Firestore**, garantindo que todas as alterações no cardápio, preços, disponibilidade de itens, configurações da loja, pedidos enviados pelo cardápio digital e permissões de equipe sejam sincronizadas instantaneamente entre todos os dispositivos conectados.
+## 1. Visão Geral do Que Será Construído
+Aprimoraremos o painel operacional e de cardápio do **Gerente do Estabelecimento** para oferecer controle total sobre o cadastro de produtos e a divulgação do cardápio digital exclusivo da loja:
 
-## Revisão e Decisões Principais
+1. **Upload Direto de Fotos do Dispositivo (Computador ou Celular)**:
+   - Substituição do seletor de URLs externas por uma área dedicada de **Upload de Arquivo Local** (`input type="file"` com suporte a câmera mobile e arrastar-e-soltar).
+   - Compressão e redimensionamento inteligente em Canvas client-side (otimizando a imagem em WebP/JPEG leve para armazenamento instantâneo e sincronização rápida com o banco de dados).
 
-> [!IMPORTANT]
-> A arquitetura prioriza a **sincronização automática em tempo real (Cloud-First)** com fallback resiliente para leitura instantânea, assegurando que o painel administrativo, o monitor de cozinha (KDS) e o cardápio digital do cliente reflitam a mesma base de dados na nuvem.
+2. **Ficha Técnica Detalhada e Disponibilidade por Dia**:
+   - Novos campos na ficha do produto: **Peso/Volume** (ex: `350g`, `500ml`), **Serve quantas pessoas** (ex: `1 pessoa`, `2 pessoas`, `Família`), **Tags Dietéticas e Alérgenos** (ex: `Sem Glúten`, `Sem Lactose`, `Vegetariano`, `Vegano`, `Contém Amendoim`, `Picante`), **Código PDV/SKU** e **Custo Estimado (R$)** com cálculo automático de margem de lucro.
+   - **Disponibilidade por Dia da Semana**: seleção dos dias em que o item aparece ativo no cardápio (ex: `Seg`, `Ter`, `Qua`, `Qui`, `Sex`, `Sáb`, `Dom`), ideal para pratos do dia ou promoções específicas.
 
-- **Decisão Confirmada 1 — Persistência Automática de Produtos e Loja no Firestore**: Todas as ações de criação, edição, duplicação, exclusão, ajuste de preços em lote, alteração de disponibilidade (1-clique) e personalização da loja passam a gravar diretamente no banco provisionado no Firestore, propagando atualizações em tempo real (`onSnapshot`) para todos os aparelhos abertos.
-- **Decisão Confirmada 2 — Fluxo Completo do Cardápio Digital até o KDS**: Pedidos realizados pelos clientes no Simulador / Cardápio Digital são gravados automaticamente no Firestore, disparando alerta sonoro e visual instantâneo no monitor de pedidos (KDS) de qualquer computador ou tablet da operação.
-- **Decisão Confirmada 3 — Inicialização Inteligente (Auto-Seed) e Gestão de Equipe**: Caso o banco de dados na nuvem ainda não possua os produtos ou configurações iniciais no primeiro acesso autenticado, o sistema popula automaticamente a coleção inicial no Firestore e disponibiliza o painel de Equipe & Administradores para controle de acessos e sincronização forçada quando necessário.
+3. **Criação de Categorias Personalizadas pelo Gerente**:
+   - Além das categorias padrão do segmento, o gerente poderá **criar, editar e excluir categorias personalizadas** (com nome, ícone e descrição) diretamente no modal de produto ou na aba de Cardápio, salvas na configuração do seu estabelecimento (`categoriasCustomizadas`).
 
----
+4. **Grupos de Opcionais, Tamanhos, Bordas e Adicionais com Limites Mín/Máx**:
+   - Configuração completa de grupos **Obrigatórios** ou **Opcionais**, escolha **Única** ou **Múltipla**, com definição de **Quantidade Mínima** e **Quantidade Máxima** de escolhas por grupo.
+   - Suporte a variações de tamanho, ponto da carne, bordas recheadas, adicionais pagos e disponibilidade individual por item opcional.
+   - Validação rigorosa no Cardápio Digital Público (`PublicMenuView`) respeitando os limites mínimo/máximo e exibindo os dados da ficha técnica (peso, porção, alérgenos) para o cliente final.
 
-## 1. Visão Geral e Conceito Central
-
-- **O Que Entrega**: Substituição do armazenamento isolado por navegador por uma camada reativa conectada ao Cloud Firestore. Qualquer alteração feita pelo administrador no celular ou computador (como pausar um item esgotado, mudar a taxa de entrega ou atualizar a chave Pix) reflete imediatamente no cardápio visto pelos clientes e nos terminais da cozinha.
-- **Público-Alvo e Contexto**: Proprietários de estabelecimentos gastronômicos, gerentes de operação, atendentes de caixa e clientes finais que acessam o cardápio digital simultaneamente em múltiplos dispositivos.
-- **Valor Principal**: Eliminação de divergências de preços ou itens esgotados entre dispositivos e centralização de pedidos, cardápio e configurações em tempo real para implantação comercial em estabelecimentos reais.
-
----
-
-## 2. Experiência do Usuário e Design Visual
-
-- **Fluxos de Uso Principais**:
-  1. **Sincronização Transparente ao Abrir o App**: Ao carregar a plataforma, o sistema estabelece ouvintes em tempo real (`onSnapshot`) para as coleções de configurações da loja e produtos. Enquanto os dados sincronizam, o indicador de nuvem no cabeçalho exibe o estado ativo da conexão.
-  2. **Atualização Instantânea de Cardápio e Preços**: Ao adicionar um produto, alterar preço rápido no card, aplicar reajuste em lote, trocar segmento ou confirmar o checklist diário, o sistema salva cada documento no Firestore (e remove itens excluídos na nuvem) sem exigir recarregamento de página.
-  3. **Envio de Pedido do Cliente para o KDS**: Quando um consumidor finaliza o pedido no cardápio digital, o pedido é registrado na coleção de pedidos do Firestore com status inicial e aparece imediatamente na fila do KDS com aviso sonoro.
-  4. **Painel de Equipe e Controle de Nuvem**: Pelo botão de Equipe no cabeçalho, o administrador principal gerencia os e-mails autorizados a editar a loja e pode acionar a sincronização completa do catálogo com um clique.
-
-- **Identidade Visual e Tema**:
-  - *Direção Estética*: Painel SaaS operacional de alta densidade e legibilidade (padrão *SaaS & Dashboard*), priorizando contraste claro, superfícies com bordas sutis de `1px` e hierarquia direta sem ornamentos artificiais.
-  - *Paleta de Cores*: Base neutra em tons ardósia/grafite no modo escuro (`#0A0A0A` / `#171717`) e superfície limpa no modo claro (`#F8FAFC` / `#FFFFFF`), com destaque semântico laranja (`#F97316`) para ações primárias, verde esmeralda (`#10B981`) para status ativo/sincronizado, âmbar (`#F59E0B`) para atenção e vermelho (`#EF4444`) para itens pausados ou alertas.
-  - *Tipografia e Alinhamento Numérico*: Tipografia sem serifa de leitura rápida para navegação e rótulos em linha única (`whitespace-nowrap`), combinada com numerais tabulares (`tabular-nums`) em todos os preços, contadores de estoque, taxas de entrega e valores financeiros.
-
-- **Feedback Interativo**:
-  - Notificações toast discretas confirmando cada gravação ou exclusão sincronizada na nuvem, além de tratamento estruturado de permissões caso um usuário não autenticado tente realizar operações restritas a administradores.
+5. **Link Exclusivo do Cardápio com Nome Personalizado (Slug), QR Code e WhatsApp**:
+   - Configuração de identificador personalizado do estabelecimento (`slug`, ex: `?modo=cardapio&loja=burger-house-centro`) que resolve automaticamente para o cardápio daquela loja.
+   - **Central de Divulgação do Cardápio**: modal/painel com cópia em 1 clique do link exclusivo, **geração de QR Code** pronto para impressão (mesas, balcão e embalagens) e botão de **Compartilhar direto no WhatsApp** com mensagem formatada.
 
 ---
 
-## 3. Decisões de Produto e Trade-Offs
-
-- **Decisão 1: Escrita Direta por Documento vs. Sobrescrita Completa de Coleção**
-  - *Abordagem Escolhida*: Sincronização granular por documento de produto (criação, atualização individual, exclusão dedicada no Firestore e gravação em lote otimizada para reajustes ou troca de segmento) combinada com documento único para configurações gerais da loja.
-  - *Por Quê*: Reduz o consumo de leituras/escritas no Firestore, evita condições de corrida quando dois administradores editam itens diferentes ao mesmo tempo e garante baixa latência.
-  - *Alternativas Consideradas*: Salvar todo o cardápio dentro de um único documento JSON foi descartado para respeitar o limite de tamanho de documento e permitir regras de validação granulares por produto.
-
-- **Decisão 2: Estratégia Híbrida de Cache Local + Fonte da Verdade no Firestore**
-  - *Abordagem Escolhida*: O Firestore atua como a fonte primária da verdade através de assinaturas em tempo real (`onSnapshot`), mantendo um espelhamento automático no cache local apenas para renderização imediata no primeiro milissegundo de abertura.
-  - *Por Quê*: Garante que o aplicativo abra instantaneamente mesmo em conexões móveis instáveis, atualizando a tela assim que o stream do Firestore entrega os dados mais recentes.
+## 2. Principais Fluxos de Experiência (UX)
+- **Fluxo de Cadastro de Produto (`ProductModal.tsx`)**:
+  - **Aba 1 — Dados & Categoria**: Nome, seletor de categoria com botão `+ Nova Categoria Personalizada`, preço de venda, preço promocional, custo para cálculo de margem, selo de destaque e descrição (com gerador inteligente).
+  - **Aba 2 — Foto do Produto (Upload Direto)**: Área de seleção/captura de foto direto do celular ou computador, pré-visualização imediata em alta nitidez, botão para trocar ou remover foto.
+  - **Aba 3 — Ficha Técnica & Dias Ativos**: Peso/gramatura, tamanho da porção (quantas pessoas serve), tempo de preparo, seleção de restrições/alérgenos e dias da semana disponíveis.
+  - **Aba 4 — Variações, Tamanhos & Complementos**: Gerenciador de grupos com controles de Obrigatório/Opcional, Mínimo e Máximo de itens, atalhos rápidos para adicionar grupos de Tamanho, Ponto, Borda ou Adicionais, e preços individuais.
+- **Fluxo do Link Exclusivo (`StoreManagerOperationView.tsx` & `MenuTableView.tsx`)**:
+  - Card destacado com o link personalizado da loja, edição rápida do identificador (slug), botão de compartilhamento via WhatsApp e visualização/download do QR Code da loja.
 
 ---
 
-## 4. Arquitetura Técnica e Estratégia de Dados *(Referência Técnica)*
-
-### Diagrama de Arquitetura e Sincronização em Tempo Real
-
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                     Camada de Autenticação & Contexto                    │
-│     Google Sign-In (Firebase Auth) ──► Verificação de Admin / Equipe     │
-└───────────────────────────────────┬──────────────────────────────────────┘
-                                    │
-                                    ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│                Camada de Sincronização (Cloud Firestore)                 │
-│                                                                          │
-│  ┌─────────────────────┐  ┌─────────────────────┐  ┌──────────────────┐  │
-│  │  Configuração Loja  │  │  Catálogo Produtos  │  │ Pedidos & Equipe │  │
-│  │ (Documento Padrão)  │  │ (Coleção Produtos)  │  │ (KDS / Admins)   │  │
-│  └──────────┬──────────┘  └──────────┬──────────┘  └────────┬─────────┘  │
-└─────────────┼────────────────────────┼──────────────────────┼────────────┘
-              │ onSnapshot / setDoc    │ onSnapshot / write   │ onSnapshot
-              ▼                        ▼                      ▼
-┌────────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
-│   Configurações, Pix,  │  │ Gestão de Cardápio, │  │ Cardápio Digital &  │
-│  Personalização Visual │  │ Preços em Lote,     │  │ Monitor KDS Tempo   │
-│  e Checklist Diário    │  │ Estoque e Exclusão  │  │ Real + Modal Equipe │
-└────────────────────────┘  └─────────────────────┘  └─────────────────────┘
-```
-
-### Modelo de Dados e Estado
-
-1. **Configurações da Loja (`store_config/default`)**:
-   - Armazena identidade do estabelecimento (nome, slogan, segmento, endereço, WhatsApp), parâmetros operacionais (taxa de entrega, tempo médio, status aberto/fechado, confirmação do cardápio do dia), configurações completas de pagamento (Pix com chave/titular/desconto, cartões, dinheiro, vales), fidelidade/cupons e personalização visual.
-2. **Catálogo de Produtos (`products/{productId}`)**:
-   - Armazena dados completos do item: identificação, nome, descrição, categoria, segmento, preço base, preço promocional, foto, disponibilidade, destaque, selo, unidade de medida, tempo de preparo e grupos de complementos/opcionais (`opcoes`).
-3. **Pedidos em Tempo Real (`orders/{orderId}`)**:
-   - Registra os pedidos submetidos pelos clientes no Simulador / Cardápio Digital com itens, opcionais escolhidos, endereço/mesa, forma de pagamento, totais e status operacional (`recebido`, `preparo`, `pronto`, `entrega`, `concluido`, `cancelado`).
-4. **Administradores Autorizados (`admins/{email}`)**:
-   - Controla os usuários autorizados pelo administrador principal a modificar configurações, produtos e status de pedidos.
-
-### Mapeamento de Interações e Mutação de Estado
-
-- **Inicialização e Assinatura Reativa**:
-  - Na montagem da aplicação principal, o sistema inicia as assinaturas `subscribeToStoreConfig` e `subscribeToProducts`.
-  - Se a nuvem já contiver dados, o estado da aplicação e o cache local são atualizados imediatamente com os dados do Firestore.
-  - Se o banco estiver vazio e o usuário estiver autenticado como administrador, os dados iniciais são enviados automaticamente para o Firestore para inicializar a loja na nuvem.
-- **Operações de Produtos (CRUD Completo + Lote)**:
-  - *Criar / Editar / Duplicar / Pausar / Destacar / Preço Rápido*: Atualiza o estado da interface imediatamente e persiste o documento completo (incluindo grupos de opcionais e configurações de medida) no Firestore.
-  - *Excluir Produto*: Remove o item da listagem e executa a exclusão do documento correspondente no Firestore para que ele desapareça de todos os dispositivos conectados.
-  - *Reajuste de Preços em Lote / Checklist Diário / Troca de Segmento*: Sincroniza todos os produtos afetados em lote no Firestore e atualiza a configuração da loja.
-- **Operações de Configuração da Loja**:
-  - Qualquer alteração em Dados da Loja, Personalização Visual, Configurações de Pagamento (Pix/Cartões), Fidelidade & Cupons ou Assistente de Implantação de Cliente persiste integralmente o objeto de configuração no Firestore.
-- **Submissão de Pedido no Cardápio Digital**:
-  - Ao finalizar um pedido no Simulador do Cliente (seja via pedido direto na plataforma ou fluxo integrado com WhatsApp), o pedido é gravado no Firestore via `syncOrderToFirestore`, tornando-se imediatamente visível na aba Pedidos & KDS em qualquer tela aberta.
+## 3. Arquivos e Componentes Envolvidos
+- `src/types/index.ts`: Expansão das interfaces `Product`, `ProductOptionGroup`, `ProductOptionItem` e `StoreConfig` (incluindo `slug`, `categoriasCustomizadas`, ficha técnica, alérgenos e dias disponíveis).
+- `src/components/ProductModal.tsx`: Reformulação completa com as 4 abas estruturadas, upload direto de foto com compressão client-side, criador de categorias personalizadas, ficha técnica e limites mín/máx de opcionais.
+- `src/components/MenuTableView.tsx`: Integração das categorias personalizadas do gerente, exibição de indicadores de ficha técnica/opções e acesso rápido ao compartilhamento do link/QR Code do cardápio.
+- `src/components/StoreManagerOperationView.tsx`: Painel aprimorado do Link Exclusivo do Cardápio com personalização de slug, QR Code para impressão e envio via WhatsApp.
+- `src/components/PublicMenuView.tsx` & `src/App.tsx`: Resolução do link por `slug` personalizado ou `storeId`, exibição de peso/porção/alérgenos e validação de limites mínimo/máximo nos grupos de complementos.
+- `firestore.rules` & `firebase-blueprint.json`: Atualização de esquema se necessário para garantir persistência segura dos novos campos.
