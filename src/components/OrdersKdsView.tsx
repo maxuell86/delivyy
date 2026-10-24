@@ -27,6 +27,7 @@ import { playOrderChime, testKitchenChime, isSoundMuted, setSoundMuted } from '.
 import { subscribeToOrders, syncOrderToFirestore, updateOrderStatusInFirestore, clearAllOrdersInFirestore } from '../services/firestoreSync';
 
 interface OrdersKdsViewProps {
+  storeId?: string;
   storeConfig: StoreConfig;
   products: Product[];
   onOpenKitchenReceipt: (cartItems: CartItem[], customerName: string, customerAddress: string, paymentMethod: string) => void;
@@ -34,21 +35,34 @@ interface OrdersKdsViewProps {
 }
 
 export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
+  storeId,
   storeConfig,
   products,
   onOpenKitchenReceipt,
   showToast,
 }) => {
+  const effectiveStoreId = storeId || storeConfig.id || 'default';
+  const storageKeyOrders = `omni_kds_orders_${effectiveStoreId}`;
+  const storageKeyCleared = `omni_kds_orders_cleared_${effectiveStoreId}`;
+
   // Mock inicial de pedidos realistas para demonstração imediata
   const [orders, setOrders] = useState<Order[]>(() => {
     try {
-      if (localStorage.getItem('omni_kds_orders_cleared') === 'true') {
-        const saved = localStorage.getItem('omni_kds_orders');
+      if (
+        localStorage.getItem(storageKeyCleared) === 'true' ||
+        (effectiveStoreId === 'default' && localStorage.getItem('omni_kds_orders_cleared') === 'true')
+      ) {
+        const saved = localStorage.getItem(storageKeyOrders);
         return saved ? JSON.parse(saved) : [];
       }
-      const saved = localStorage.getItem('omni_kds_orders');
+      const saved = localStorage.getItem(storageKeyOrders) || (effectiveStoreId === 'default' ? localStorage.getItem('omni_kds_orders') : null);
       if (saved) return JSON.parse(saved);
     } catch (e) {}
+
+    // Para novas lojas recém-criadas (não default), inicia sem pedidos fictícios
+    if (effectiveStoreId !== 'default') {
+      return [];
+    }
 
     const sampleProduct1 = products[0] || {
       id: 'p1',
@@ -83,6 +97,7 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
     return [
       {
         id: 'ord_101',
+        storeId: 'default',
         numero: 101,
         clienteNome: 'Mariana Ferreira',
         clienteTelefone: '5565999881122',
@@ -117,6 +132,7 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
       },
       {
         id: 'ord_102',
+        storeId: 'default',
         numero: 102,
         clienteNome: 'Carlos Eduardo Mendes',
         clienteTelefone: '5565984443322',
@@ -150,6 +166,7 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
       },
       {
         id: 'ord_103',
+        storeId: 'default',
         numero: 103,
         clienteNome: 'Rodrigo Alcantara',
         clienteTelefone: '5565992225544',
@@ -176,6 +193,7 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
       },
       {
         id: 'ord_104',
+        storeId: 'default',
         numero: 104,
         clienteNome: 'Beatriz Vasconcelos',
         clienteTelefone: '5565993338877',
@@ -225,34 +243,45 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
   };
 
   useEffect(() => {
-    // 1. Sincronização em tempo real via Firebase Firestore
-    const unsubscribeFirestore = subscribeToOrders((cloudOrders) => {
-      if (cloudOrders && cloudOrders.length > 0) {
-        setOrders((prev) => {
-          const hasNewOrder = cloudOrders.some(co => !prev.some(po => po.id === co.id));
-          if (hasNewOrder && prev.length > 0) {
-            playOrderChime();
-            const newest = cloudOrders[0];
-            setRecentOrderId(newest.id);
-            showToast(`🔔 Novo Pedido #${newest.numero} sincronizado via Nuvem!`);
-          }
-          return cloudOrders;
-        });
+    // 1. Sincronização em tempo real via Firebase Firestore isolada por effectiveStoreId
+    const unsubscribeFirestore = subscribeToOrders(
+      (cloudOrders) => {
+        if (cloudOrders && cloudOrders.length > 0) {
+          setOrders((prev) => {
+            const hasNewOrder = cloudOrders.some((co) => !prev.some((po) => po.id === co.id));
+            if (hasNewOrder && prev.length > 0) {
+              playOrderChime();
+              const newest = cloudOrders[0];
+              setRecentOrderId(newest.id);
+              showToast(`🔔 Novo Pedido #${newest.numero} sincronizado via Nuvem!`);
+            }
+            return cloudOrders;
+          });
 
-        try {
-          localStorage.setItem('omni_kds_orders', JSON.stringify(cloudOrders));
-        } catch {}
-      } else if (cloudOrders && cloudOrders.length === 0 && localStorage.getItem('omni_kds_orders_cleared') === 'true') {
-        setOrders([]);
-      }
-    });
+          try {
+            localStorage.setItem(storageKeyOrders, JSON.stringify(cloudOrders));
+          } catch {}
+        } else if (cloudOrders && cloudOrders.length === 0) {
+          if (
+            effectiveStoreId !== 'default' ||
+            localStorage.getItem(storageKeyCleared) === 'true' ||
+            localStorage.getItem('omni_kds_orders_cleared') === 'true'
+          ) {
+            setOrders([]);
+          }
+        }
+      },
+      undefined,
+      effectiveStoreId
+    );
 
     const handleNewOrderEvent = (e: Event) => {
       const customEvent = e as CustomEvent<Order>;
       if (customEvent.detail) {
         const order = customEvent.detail;
+        if ((order.storeId || 'default') !== effectiveStoreId) return;
         setOrders((prev) => {
-          if (prev.some(o => o.id === order.id)) return prev;
+          if (prev.some((o) => o.id === order.id)) return prev;
           return [order, ...prev];
         });
         setRecentOrderId(order.id);
@@ -262,7 +291,7 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
     };
 
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'omni_kds_orders' && e.newValue) {
+      if (e.key === storageKeyOrders && e.newValue) {
         try {
           const parsed: Order[] = JSON.parse(e.newValue);
           setOrders(parsed);
@@ -277,12 +306,12 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
       window.removeEventListener('new_order_placed', handleNewOrderEvent);
       window.removeEventListener('storage', handleStorageChange);
     };
-  }, []);
+  }, [effectiveStoreId, storageKeyOrders, storageKeyCleared]);
 
   const saveOrders = (newOrders: Order[]) => {
     setOrders(newOrders);
     try {
-      localStorage.setItem('omni_kds_orders', JSON.stringify(newOrders));
+      localStorage.setItem(storageKeyOrders, JSON.stringify(newOrders));
     } catch (e) {}
   };
 
@@ -319,6 +348,7 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
     const prod = products[Math.floor(Math.random() * products.length)] || products[0];
     const newOrder: Order = {
       id: 'ord_' + Date.now(),
+      storeId: effectiveStoreId,
       numero: newNum,
       clienteNome: 'Cliente Balcão ' + newNum,
       clienteTelefone: storeConfig.whatsapp,
@@ -345,7 +375,7 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
     };
 
     saveOrders([newOrder, ...orders]);
-    syncOrderToFirestore(newOrder).catch((err) => {
+    syncOrderToFirestore(newOrder, effectiveStoreId).catch((err) => {
       console.warn('Sincronização de pedido KDS em modo local:', err);
     });
     setRecentOrderId(newOrder.id);
@@ -387,13 +417,17 @@ export const OrdersKdsView: React.FC<OrdersKdsViewProps> = ({
   const handleClearOrders = async () => {
     setOrders([]);
     try {
-      localStorage.setItem('omni_kds_orders_cleared', 'true');
-      localStorage.setItem('omni_kds_orders', JSON.stringify([]));
+      localStorage.setItem(storageKeyCleared, 'true');
+      localStorage.setItem(storageKeyOrders, JSON.stringify([]));
+      if (effectiveStoreId === 'default') {
+        localStorage.setItem('omni_kds_orders_cleared', 'true');
+        localStorage.setItem('omni_kds_orders', JSON.stringify([]));
+      }
     } catch {}
-    await clearAllOrdersInFirestore().catch((err) => {
+    await clearAllOrdersInFirestore(effectiveStoreId).catch((err) => {
       console.warn('Erro ao limpar pedidos no Firestore:', err);
     });
-    showToast('Painel KDS zerado! Pronto para receber pedidos reais.');
+    showToast('Painel KDS deste estabelecimento zerado! Pronto para receber pedidos reais.');
   };
 
   const cardSurfaceClass = isDark

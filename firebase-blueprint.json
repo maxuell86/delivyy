@@ -5,34 +5,39 @@
       "description": "Store profile, visual branding, delivery settings, Pix configuration and operational flags",
       "type": "object",
       "properties": {
+        "id": { "type": "string", "maxLength": 64 },
         "nome": { "type": "string", "maxLength": 100 },
         "slogan": { "type": "string", "maxLength": 150 },
-        "whatsapp": { "type": "string", "maxLength": 20 },
+        "whatsapp": { "type": "string", "maxLength": 30 },
         "pixChave": { "type": "string", "maxLength": 100 },
         "pixNomeTitular": { "type": "string", "maxLength": 100 },
         "pixCidade": { "type": "string", "maxLength": 50 },
-        "taxaEntregaFixa": { "type": "number" },
+        "taxaEntregaPadrao": { "type": "number" },
         "tempoEntrega": { "type": "string", "maxLength": 50 },
-        "corTema": { "type": "string", "maxLength": 20 },
+        "corPrimaria": { "type": "string", "maxLength": 20 },
+        "gerenteEmail": { "type": "string", "maxLength": 150 },
+        "gerenteNome": { "type": "string", "maxLength": 100 },
+        "statusLicenca": { "type": "string", "enum": ["ativa", "implantacao", "suspensa"] },
         "updatedAt": { "type": "string" }
       },
       "required": ["nome", "whatsapp"]
     },
     "Product": {
       "title": "Product",
-      "description": "Menu product item with pricing, category, description, and status",
+      "description": "Menu product item with pricing, category, description, storeId and status",
       "type": "object",
       "properties": {
         "id": { "type": "string", "maxLength": 64 },
-        "nome": { "type": "string", "maxLength": 100 },
-        "descricao": { "type": "string", "maxLength": 300 },
+        "storeId": { "type": "string", "maxLength": 64 },
+        "nome": { "type": "string", "maxLength": 150 },
+        "descricao": { "type": "string", "maxLength": 500 },
         "preco": { "type": "number" },
-        "categoriaId": { "type": "string", "maxLength": 50 },
+        "categoria": { "type": "string", "maxLength": 50 },
         "disponivel": { "type": "boolean" },
         "destaque": { "type": "boolean" },
-        "imagemUrl": { "type": "string", "maxLength": 500 }
+        "imagem": { "type": "string", "maxLength": 500 }
       },
-      "required": ["id", "nome", "preco", "categoriaId", "disponivel"]
+      "required": ["id", "nome", "preco", "disponivel"]
     },
     "Order": {
       "title": "Order",
@@ -40,25 +45,28 @@
       "type": "object",
       "properties": {
         "id": { "type": "string", "maxLength": 64 },
+        "storeId": { "type": "string", "maxLength": 64 },
         "numeroPedido": { "type": "number" },
         "clienteNome": { "type": "string", "maxLength": 100 },
         "clienteTelefone": { "type": "string", "maxLength": 30 },
         "formaPagamento": { "type": "string", "maxLength": 30 },
-        "status": { "type": "string", "enum": ["pendente", "preparando", "pronto", "entregue", "cancelado"] },
+        "status": { "type": "string", "enum": ["recebido", "preparo", "rota", "concluido", "cancelado", "pendente", "preparando", "pronto", "entregue"] },
         "total": { "type": "number" },
-        "itensResumo": { "type": "string", "maxLength": 1000 },
         "criadoEm": { "type": "string", "maxLength": 50 }
       },
       "required": ["id", "numeroPedido", "clienteNome", "clienteTelefone", "status", "total"]
     },
     "AdminUser": {
       "title": "AdminUser",
-      "description": "Authorized manager, cashier, or kitchen operator",
+      "description": "Authorized platform admin, store manager, cashier, or kitchen operator bound to an establishment",
       "type": "object",
       "properties": {
         "uid": { "type": "string", "maxLength": 128 },
         "email": { "type": "string", "maxLength": 150 },
-        "role": { "type": "string", "enum": ["admin", "kitchen", "attendant"] },
+        "nome": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["platform_admin", "store_manager", "admin", "kitchen", "attendant"] },
+        "storeId": { "type": "string", "maxLength": 64 },
+        "storeName": { "type": "string", "maxLength": 100 },
         "criadoEm": { "type": "string", "maxLength": 50 }
       },
       "required": ["uid", "email", "role"]
@@ -67,19 +75,19 @@
   "firestore": {
     "/store_config/{configId}": {
       "schema": "StoreConfig",
-      "description": "Global store profile and payment settings"
+      "description": "Store profile, visual branding, payment settings, and bound store manager"
     },
     "/products/{productId}": {
       "schema": "Product",
-      "description": "Menu items available for ordering"
+      "description": "Menu items isolated per storeId"
     },
     "/orders/{orderId}": {
       "schema": "Order",
-      "description": "Real-time kitchen orders synced across mobile and PC"
+      "description": "Real-time kitchen orders isolated per storeId"
     },
     "/admins/{userId}": {
       "schema": "AdminUser",
-      "description": "Role-based administrator and kitchen team members"
+      "description": "Role-based store managers and operators bound to specific establishments"
     }
   }
 }

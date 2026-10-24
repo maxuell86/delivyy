@@ -428,9 +428,11 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
       localStorage.setItem('omni_cust_bairro', selectedNeighborhood);
     } catch {}
 
+    const effectiveStoreId = storeConfig.id || 'default';
     const orderNum = Math.floor(100 + Math.random() * 899);
     const newOrder: Order = {
       id: 'ord_' + Date.now(),
+      storeId: effectiveStoreId,
       numero: orderNum,
       clienteNome: customerName.trim(),
       clienteTelefone: customerPhone.trim(),
@@ -461,7 +463,7 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
     };
 
     // 1. Save to Cloud Firestore in real time so Kitchen KDS receives it immediately
-    syncOrderToFirestore(newOrder).catch((err) => {
+    syncOrderToFirestore(newOrder, effectiveStoreId).catch((err) => {
       console.warn('Erro ao gravar pedido no Firestore:', err);
     });
 

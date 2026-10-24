@@ -20,15 +20,20 @@ import { PALETAS_CORES_PRESET } from '../data/colorPresets';
 interface ClientOnboardingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onComplete: (config: StoreConfig, loadSampleMenu: boolean) => void;
+  activeStoreId?: string;
+  onComplete: (config: StoreConfig, loadSampleMenu: boolean, targetStoreId: string) => void;
 }
 
 export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
   isOpen,
   onClose,
+  activeStoreId = 'default',
   onComplete,
 }) => {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+
+  // Mode: create new isolated establishment vs update current
+  const [criarNovaUnidade, setCriarNovaUnidade] = useState<boolean>(true);
 
   // Form State
   const [nome, setNome] = useState('Novo Estabelecimento');
@@ -37,6 +42,8 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
   const [cidade, setCidade] = useState('Tangará da Serra');
   const [bairro, setBairro] = useState('Centro');
   const [whatsapp, setWhatsapp] = useState('5565996953036');
+  const [gerenteNome, setGerenteNome] = useState('');
+  const [gerenteEmail, setGerenteEmail] = useState('');
 
   // Step 2: Branding
   const [paletaId, setPaletaId] = useState('laranja-fogo');
@@ -55,7 +62,6 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
 
   const handleSelectSegment = (segId: SegmentId) => {
     setSegmento(segId);
-    // Sugestão de cores e slogan
     const segInfo = SEGMENTOS_DISPONIVEIS.find((s) => s.id === segId);
     if (segInfo) {
       setCorTema(segInfo.corSecundaria);
@@ -67,7 +73,21 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
   };
 
   const handleFinish = () => {
+    const slugBase = nome
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 32);
+
+    const targetStoreId = criarNovaUnidade
+      ? `loja_${slugBase || Date.now()}`
+      : activeStoreId || 'default';
+
     const newConfig: StoreConfig = {
+      id: targetStoreId,
       segmento,
       nome,
       slogan,
@@ -83,6 +103,10 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
       horarioFuncionamento: 'Terça a Domingo das 18h às 23h30',
       cardapioConfirmadoHoje: true,
       ultimaConfirmacao: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      gerenteEmail: gerenteEmail.trim().toLowerCase() || undefined,
+      gerenteNome: gerenteNome.trim() || undefined,
+      statusLicenca: 'ativo',
+      criadoEm: new Date().toISOString(),
       pagamentos: {
         pixAtivo: true,
         pixTipo: 'direto',
@@ -112,7 +136,7 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
       },
     };
 
-    onComplete(newConfig, carregarCardapioModelo);
+    onComplete(newConfig, carregarCardapioModelo, targetStoreId);
     onClose();
   };
 
@@ -128,15 +152,15 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-black text-white">
-                Assistente de Configuração do Novo Restaurante
+                Implantação de Estabelecimento &amp; Vínculo de Gerente
               </h2>
               <p className="text-xs text-neutral-400">
-                Configure um novo cliente do zero em 4 etapas rápidas.
+                Configure um novo estabelecimento isolado e vincule o login exclusivo do gerente.
               </p>
             </div>
           </div>
 
-          <button onClick={onClose} className="p-1 rounded-lg text-neutral-400 hover:text-white">
+          <button onClick={onClose} className="p-1 rounded-lg text-neutral-400 hover:text-white cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -144,7 +168,7 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
         {/* Step Indicator */}
         <div className="px-6 py-3 bg-neutral-950 border-b border-neutral-800/80 flex items-center justify-between text-xs">
           {[
-            { num: 1, label: 'Negócio & Nicho' },
+            { num: 1, label: 'Loja & Login Gerente' },
             { num: 2, label: 'Identidade & Cores' },
             { num: 3, label: 'Pix & Frete' },
             { num: 4, label: 'Cardápio Inicial' },
@@ -178,9 +202,37 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto max-h-[65vh] space-y-5">
           
-          {/* ETAPA 1: DADOS DO ESTABELECIMENTO */}
+          {/* ETAPA 1: DADOS DO ESTABELECIMENTO + LOGIN DO GERENTE */}
           {step === 1 && (
             <div className="space-y-4">
+              {/* Modo de criação */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setCriarNovaUnidade(true)}
+                  className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                    criarNovaUnidade
+                      ? 'border-orange-500 bg-orange-500/10 text-white font-bold'
+                      : 'border-neutral-800 bg-neutral-950 text-neutral-400'
+                  }`}
+                >
+                  <span className="block text-xs font-black text-orange-400">+ Criar Novo Estabelecimento Isolado</span>
+                  <span className="text-[11px] text-neutral-400">Cria um novo ID de loja separado para um novo cliente</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCriarNovaUnidade(false)}
+                  className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                    !criarNovaUnidade
+                      ? 'border-orange-500 bg-orange-500/10 text-white font-bold'
+                      : 'border-neutral-800 bg-neutral-950 text-neutral-400'
+                  }`}
+                >
+                  <span className="block text-xs font-black">Reconfigurar Loja Selecionada</span>
+                  <span className="text-[11px] text-neutral-400">Atualiza os dados do estabelecimento atual ({activeStoreId})</span>
+                </button>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-neutral-300 mb-1">
                   Nome do Estabelecimento / Restaurante
@@ -194,6 +246,39 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
                 />
               </div>
 
+              {/* Vínculo do Login do Gerente do Estabelecimento */}
+              <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30 space-y-2.5">
+                <span className="text-xs font-bold text-emerald-400 block">
+                  Vincular Login Exclusivo do Gerente do Estabelecimento (Opcional agora)
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                  <div>
+                    <label className="block font-semibold text-neutral-300 mb-1">
+                      Nome do Gerente / Proprietário
+                    </label>
+                    <input
+                      type="text"
+                      value={gerenteNome}
+                      onChange={(e) => setGerenteNome(e.target.value)}
+                      placeholder="Ex: Roberto Almeida"
+                      className="w-full px-3 py-2 bg-neutral-950 border border-neutral-700 rounded-xl text-white outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-neutral-300 mb-1">
+                      E-mail Google do Gerente (Acesso Exclusivo)
+                    </label>
+                    <input
+                      type="email"
+                      value={gerenteEmail}
+                      onChange={(e) => setGerenteEmail(e.target.value)}
+                      placeholder="gerente.cliente@gmail.com"
+                      className="w-full px-3 py-2 bg-neutral-950 border border-neutral-700 rounded-xl text-white outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-neutral-300 mb-2">
                   Selecione o Nicho Gastronômico Comercial:
@@ -204,7 +289,7 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
                       key={seg.id}
                       type="button"
                       onClick={() => handleSelectSegment(seg.id)}
-                      className={`p-3 rounded-xl border text-left transition flex flex-col items-center justify-center text-center gap-1.5 ${
+                      className={`p-3 rounded-xl border text-left transition flex flex-col items-center justify-center text-center gap-1.5 cursor-pointer ${
                         segmento === seg.id
                           ? 'border-orange-500 bg-orange-500/10 text-white shadow-md'
                           : 'border-neutral-800 bg-neutral-950 text-neutral-400 hover:border-neutral-700'

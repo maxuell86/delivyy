@@ -35,6 +35,12 @@ service cloud.firestore {
         (isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
     }
 
+    function isAuthorizedForStore(targetStoreId) {
+      return isSuperAdminEmail() ||
+        (isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.storeId == targetStoreId);
+    }
+
     function isValidStoreConfig(data) {
       return data.keys().hasAll(['nome', 'whatsapp']) &&
         data.nome is string && data.nome.size() <= 100 &&
@@ -63,17 +69,17 @@ service cloud.firestore {
       return data.keys().hasAll(['uid', 'email', 'role']) &&
         data.uid is string && data.uid.size() <= 128 &&
         data.email is string && data.email.size() <= 150 &&
-        data.role in ['admin', 'kitchen', 'attendant'];
+        data.role in ['platform_admin', 'store_manager', 'admin', 'kitchen', 'attendant'];
     }
 
-    // Collection 1: Store Configuration
+    // Collection 1: Store Configuration (isolated by configId / storeId)
     match /store_config/{configId} {
       allow get, list: if true;
-      allow create, update: if isAdmin() && isValidStoreConfig(incoming());
-      allow delete: if isAdmin();
+      allow create, update: if (isAuthorizedForStore(configId) || isAdmin()) && isValidStoreConfig(incoming());
+      allow delete: if isSuperAdminEmail();
     }
 
-    // Collection 2: Products Menu
+    // Collection 2: Products Menu (isolated by storeId)
     match /products/{productId} {
       allow get, list: if true;
       allow create: if isAdmin() && isValidId(productId) && isValidProduct(incoming()) && incoming().id == productId;
@@ -81,7 +87,7 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(productId);
     }
 
-    // Collection 3: Kitchen & Delivery Orders
+    // Collection 3: Kitchen & Delivery Orders (isolated by storeId)
     match /orders/{orderId} {
       allow get, list: if true;
       allow create: if isValidId(orderId) && isValidOrder(incoming()) && incoming().id == orderId;
@@ -90,7 +96,7 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(orderId);
     }
 
-    // Collection 4: Admin Team Members
+    // Collection 4: Admin Team Members & Store Bindings
     match /admins/{userId} {
       allow get: if isSignedIn();
       allow list: if isSignedIn();

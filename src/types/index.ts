@@ -52,6 +52,7 @@ export interface ProductOptionGroup {
 
 export interface Product {
   id: string;
+  storeId?: string;
   nome: string;
   categoria: CategoryId;
   segmento?: SegmentId;
@@ -120,6 +121,7 @@ export interface CouponItem {
 }
 
 export interface StoreConfig {
+  id?: string;
   segmento: SegmentId;
   nome: string;
   slogan: string;
@@ -137,6 +139,13 @@ export interface StoreConfig {
   ultimaConfirmacao?: string;
   pagamentos?: PaymentMethodsConfig;
   
+  // Vínculo de Gerente e Controle Comercial SaaS (Gerente da Plataforma)
+  gerenteEmail?: string;
+  gerenteNome?: string;
+  statusLicenca?: 'ativo' | 'implantacao' | 'suspenso';
+  planoMensal?: string;
+  criadoEm?: string;
+
   // Recursos Integrados do Projeto
   faixasEntrega?: DeliveryZone[];
   happyHour?: {
@@ -153,6 +162,20 @@ export interface StoreConfig {
   cupons?: CouponItem[];
   horariosGrade?: { [dia: string]: { abre: number; fecha: number } | null };
   customizacao?: CustomizationConfig;
+}
+
+export type UserRole = 'platform_admin' | 'store_manager' | 'kitchen' | 'attendant' | 'admin';
+
+export type ViewPerspective = 'platform_admin' | 'store_manager';
+
+export interface AdminMemberRecord {
+  uid: string;
+  email: string;
+  nome?: string;
+  role: UserRole;
+  storeId: string; // ID do estabelecimento vinculado (ou 'all' para Super Admin da Plataforma)
+  storeName?: string;
+  criadoEm: string;
 }
 
 export interface CartItem {
@@ -174,6 +197,7 @@ export type OrderStatus = 'recebido' | 'preparo' | 'rota' | 'concluido' | 'cance
 
 export interface Order {
   id: string;
+  storeId?: string;
   numero: number;
   clienteNome: string;
   clienteTelefone: string;
@@ -229,6 +253,7 @@ export interface CustomizationConfig {
 }
 
 export type DepartmentTab = 
+  | 'operacao'
   | 'cardapio'
   | 'pedidos'
   | 'estoque'
@@ -238,5 +263,6 @@ export type DepartmentTab =
   | 'simulador';
 
 export type ThemeMode = 'dark' | 'light';
+
 
 

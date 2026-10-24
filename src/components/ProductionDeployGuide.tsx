@@ -55,8 +55,9 @@ export const ProductionDeployGuide: React.FC<ProductionDeployGuideProps> = ({
   const [copiedWhatsappGreeting, setCopiedWhatsappGreeting] = useState(false);
 
   const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maxdelivery.app';
-  const publicMenuUrl = `${originUrl}/?modo=cardapio`;
-  const kdsDirectUrl = `${originUrl}/?modo=kds`;
+  const storeParam = storeConfig.id && storeConfig.id !== 'default' ? `&loja=${encodeURIComponent(storeConfig.id)}` : '';
+  const publicMenuUrl = `${originUrl}/?modo=cardapio${storeParam}`;
+  const kdsDirectUrl = `${originUrl}/?modo=kds${storeParam}`;
 
   const [completedSteps, setCompletedSteps] = useState<{ [key: string]: boolean }>({
     step1: true,
