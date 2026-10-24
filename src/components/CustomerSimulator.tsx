@@ -278,9 +278,11 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
     if (paymentMethod === 'Dinheiro') pagFormatado = `Dinheiro ${trocoPara ? `(Troco para R$ ${trocoPara})` : '(Sem troco)'}`;
     if (paymentMethod === 'ValeRefeicao') pagFormatado = `Vale Refeição (${valeSelecionado})`;
 
+    const effectiveStoreId = storeConfig.id || 'default';
     const orderNum = Math.floor(105 + Math.random() * 890);
     const newOrder: Order = {
       id: 'ord_' + Date.now(),
+      storeId: effectiveStoreId,
       numero: orderNum,
       clienteNome: customerName || 'Cliente Delivery',
       clienteTelefone: customerPhone || storeConfig.whatsapp,
@@ -298,14 +300,18 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
       tempoEstimadoMin: 35,
     };
 
-    syncOrderToFirestore(newOrder).catch((err) => {
+    syncOrderToFirestore(newOrder, effectiveStoreId).catch((err) => {
       console.warn('Erro ao sincronizar pedido do simulador no Firestore:', err);
     });
 
     try {
-      const existing = localStorage.getItem('omni_kds_orders');
+      const kdsKey = `omni_kds_orders_${effectiveStoreId}`;
+      const existing = localStorage.getItem(kdsKey);
       const ordersList: Order[] = existing ? JSON.parse(existing) : [];
-      localStorage.setItem('omni_kds_orders', JSON.stringify([newOrder, ...ordersList]));
+      localStorage.setItem(kdsKey, JSON.stringify([newOrder, ...ordersList]));
+      if (effectiveStoreId === 'default') {
+        localStorage.setItem('omni_kds_orders', JSON.stringify([newOrder, ...ordersList]));
+      }
       window.dispatchEvent(new CustomEvent('new_order_placed', { detail: newOrder }));
       playOrderChime();
     } catch {}

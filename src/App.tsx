@@ -7,7 +7,9 @@ import {
   Building2,
   ChevronDown,
   Lock,
-  AlertCircle
+  AlertCircle,
+  Copy,
+  ExternalLink
 } from 'lucide-react';
 import { Product, StoreConfig, CategoryId, SegmentId, ViewPerspective, CartItem } from './types';
 import { PRODUTOS_PRESETS_SEGMENTO, SEGMENTOS_DISPONIVEIS, CATEGORIAS_POR_SEGMENTO } from './data/segmentData';
@@ -55,10 +57,11 @@ export default function App() {
   const hasSeededConfigRef = useRef(false);
   const hasSeededProductsRef = useRef(false);
 
-  // Check URL query parameters for Public Customer Menu (?modo=cardapio&loja=...) or Kitchen KDS (?modo=kds&loja=...)
+  // Check URL query parameters for Public Customer Menu (?modo=cardapio&loja=... or ?loja=...) or Kitchen KDS (?modo=kds&loja=...)
   const initialUrlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const initialModo = initialUrlParams?.get('modo');
-  const initialLojaParam = sanitizeStoreId(initialUrlParams?.get('loja') || 'default');
+  const rawLojaUrlParam = initialUrlParams?.get('loja') || initialUrlParams?.get('store');
+  const initialLojaParam = sanitizeStoreId(rawLojaUrlParam || 'default');
 
   const [selectedStoreId, setSelectedStoreId] = useState<string>(initialLojaParam);
   const [allStores, setAllStores] = useState<StoreConfig[]>([]);
@@ -66,11 +69,27 @@ export default function App() {
   // Perspective: Platform Manager ('platform_admin') vs Store Manager ('store_manager')
   const [viewPerspective, setViewPerspective] = useState<ViewPerspective>('platform_admin');
 
-  // Effective storeId: if user is a bound Store Manager (not Super Admin), lock strictly to their assignedStoreId
-  const activeStoreId = !isSuperAdmin && assignedStoreId ? assignedStoreId : selectedStoreId;
+  // Open public customer storefront automatically when URL has ?modo=cardapio, ?modo=cliente, or ?loja=... (unless modo=kds or modo=admin)
+  const [isPublicStorefront, setIsPublicStorefront] = useState<boolean>(
+    initialModo === 'cardapio' ||
+      initialModo === 'cliente' ||
+      (Boolean(rawLojaUrlParam) && initialModo !== 'kds' && initialModo !== 'admin')
+  );
+  const [openedFromAdmin, setOpenedFromAdmin] = useState<boolean>(false);
+
+  // Effective storeId:
+  // - If viewing public storefront via direct link (!openedFromAdmin), respect the store ID from the URL (selectedStoreId)
+  // - Otherwise, if user is a bound Store Manager (not Super Admin), lock strictly to their assignedStoreId
+  const activeStoreId =
+    isPublicStorefront && !openedFromAdmin
+      ? selectedStoreId
+      : !isSuperAdmin && assignedStoreId
+      ? assignedStoreId
+      : selectedStoreId;
 
   // Automatically adjust perspective and default tab when a bound Store Manager or Kitchen user logs in
   useEffect(() => {
+    if (isPublicStorefront && !openedFromAdmin) return;
     if (user && !isSuperAdmin && assignedStoreId) {
       setSelectedStoreId(assignedStoreId);
       setViewPerspective('store_manager');
@@ -81,18 +100,18 @@ export default function App() {
           ['customizacao', 'loja', 'simulador', 'producao', 'diagnostico'].includes(prev) ? 'operacao' : prev
         );
       }
-    } else if (isSuperAdmin) {
-      // Super Admin starts in platform_admin perspective unless they toggle it
     }
-  }, [user, isSuperAdmin, assignedStoreId, userRole]);
+  }, [user, isSuperAdmin, assignedStoreId, userRole, isPublicStorefront, openedFromAdmin]);
 
   const [storeConfig, setStoreConfig] = useState<StoreConfig>(() => {
     try {
-      const saved = localStorage.getItem(`omni_delivery_config_${initialLojaParam}`) || localStorage.getItem('omni_delivery_config');
+      const saved =
+        localStorage.getItem(`omni_delivery_config_${initialLojaParam}`) ||
+        (initialLojaParam === 'default' ? localStorage.getItem('omni_delivery_config') : null);
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return {
-      id: 'default',
+      id: initialLojaParam,
       segmento: 'hamburgueria' as SegmentId,
       nome: 'Max Hamburguer',
       slogan: 'Hambúrgueres Artesanais na Brasa',
@@ -113,20 +132,17 @@ export default function App() {
 
   const [products, setProducts] = useState<Product[]>(() => {
     try {
-      const saved = localStorage.getItem(`omni_delivery_products_${initialLojaParam}`) || localStorage.getItem('omni_delivery_products');
+      const saved =
+        localStorage.getItem(`omni_delivery_products_${initialLojaParam}`) ||
+        (initialLojaParam === 'default' ? localStorage.getItem('omni_delivery_products') : null);
       if (saved) return JSON.parse(saved);
     } catch (e) {}
-    return PRODUTOS_PRESETS_SEGMENTO.hamburgueria;
+    return initialLojaParam === 'default' ? PRODUTOS_PRESETS_SEGMENTO.hamburgueria : [];
   });
 
   const currentSegment = storeConfig.segmento || 'hamburgueria';
   const currentSegmentConfig = SEGMENTOS_DISPONIVEIS.find((s) => s.id === currentSegment) || SEGMENTOS_DISPONIVEIS[0];
   const categoriasDoSegmento = CATEGORIAS_POR_SEGMENTO[currentSegment] || CATEGORIAS_POR_SEGMENTO.hamburgueria;
-
-  const [isPublicStorefront, setIsPublicStorefront] = useState<boolean>(
-    initialModo === 'cardapio' || initialModo === 'cliente'
-  );
-  const [openedFromAdmin, setOpenedFromAdmin] = useState<boolean>(false);
 
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<AppTab>(() => {
@@ -183,6 +199,18 @@ export default function App() {
 
   // Real-time Firestore synchronization for StoreConfig and Products isolated by activeStoreId
   useEffect(() => {
+    // Load cached config/products for activeStoreId immediately on store switch
+    try {
+      const cachedCfg = localStorage.getItem(`omni_delivery_config_${activeStoreId}`);
+      if (cachedCfg) {
+        setStoreConfig({ ...JSON.parse(cachedCfg), id: activeStoreId });
+      }
+      const cachedProds = localStorage.getItem(`omni_delivery_products_${activeStoreId}`);
+      if (cachedProds) {
+        setProducts(JSON.parse(cachedProds));
+      }
+    } catch {}
+
     const unsubscribeConfig = subscribeToStoreConfig(
       (cloudConfig, exists) => {
         if (exists && cloudConfig) {
@@ -634,17 +662,17 @@ export default function App() {
         {/* DEP 1: GESTÃO DE CARDÁPIO (PRODUTOS) */}
         {(activeTab === 'cardapio' || activeTab === 'produtos') && (
           <div className="space-y-6">
-            {/* Quick Segment Banner & Stats */}
-            <div className={`${cardSurface} border rounded-2xl p-4 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3 transition-colors`}>
+            {/* Quick Segment Banner, Stats & Direct Exclusive Store Menu Link */}
+            <div className={`${cardSurface} border rounded-2xl p-4 shadow-lg flex flex-col lg:flex-row lg:items-center justify-between gap-4 transition-colors`}>
               <div className="flex items-center gap-3">
                 <span className="text-3xl">{currentSegmentConfig.icone}</span>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-bold text-orange-500">
                       Segmento: {currentSegmentConfig.nome}
                     </span>
                     <span className={`text-[11px] ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-                      ({products.length} itens cadastrados nesta loja)
+                      ({products.length} itens vinculados exclusivamente a esta loja)
                     </span>
                   </div>
                   <h2 className={`text-base font-black ${isDark ? 'text-white' : 'text-neutral-900'}`}>
@@ -653,23 +681,65 @@ export default function App() {
                 </div>
               </div>
 
-              {isSuperAdmin && viewPerspective === 'platform_admin' ? (
-                <button
-                  onClick={() => setIsSegmentModalOpen(true)}
-                  className={`px-3.5 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer ${
-                    isDark ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border-neutral-700' : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border-neutral-300'
-                  }`}
-                >
-                  <Building2 className="w-3.5 h-3.5 text-orange-500" />
-                  <span>Trocar Segmento Comercial</span>
-                  <ChevronDown className="w-3 h-3 opacity-60" />
-                </button>
-              ) : (
-                <div className="flex items-center gap-1.5 text-xs text-emerald-500 font-semibold">
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>Catálogo Exclusivo: {storeConfig.nome}</span>
-                </div>
-              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Direct Exclusive Menu Link Copy & Preview */}
+                {(() => {
+                  const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://maxdelivery.app';
+                  const storeMenuUrl =
+                    activeStoreId && activeStoreId !== 'default'
+                      ? `${originUrl}/?modo=cardapio&loja=${encodeURIComponent(activeStoreId)}`
+                      : `${originUrl}/?modo=cardapio`;
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(storeMenuUrl);
+                          showToast(`Link exclusivo do cardápio de "${storeConfig.nome}" copiado!`);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+                        title={storeMenuUrl}
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copiar Link Deste Cardápio</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenedFromAdmin(true);
+                          setIsPublicStorefront(true);
+                        }}
+                        className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap ${
+                          isDark
+                            ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border-neutral-700'
+                            : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border-neutral-300'
+                        }`}
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 text-emerald-500" />
+                        <span>Ver Cardápio do Cliente</span>
+                      </button>
+                    </>
+                  );
+                })()}
+
+                {isSuperAdmin && viewPerspective === 'platform_admin' ? (
+                  <button
+                    onClick={() => setIsSegmentModalOpen(true)}
+                    className={`px-3.5 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                      isDark ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border-neutral-700' : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border-neutral-300'
+                    }`}
+                  >
+                    <Building2 className="w-3.5 h-3.5 text-orange-500" />
+                    <span>Trocar Segmento Comercial</span>
+                    <ChevronDown className="w-3 h-3 opacity-60" />
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-500 font-semibold">
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>ID Loja: {activeStoreId}</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Quick Filter & Toolbar */}

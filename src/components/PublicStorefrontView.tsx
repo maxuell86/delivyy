@@ -85,10 +85,43 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
   const [itemNotes, setItemNotes] = useState('');
   const [segundoSaborPizza, setSegundoSaborPizza] = useState<string>('');
 
-  // Cart & Checkout state
+  const effectiveStoreId = storeConfig.id || 'default';
+  const cartStorageKey = `omni_public_cart_${effectiveStoreId}`;
+  const activeOrderStorageKey = `omni_customer_active_order_${effectiveStoreId}`;
+
+  // Flatten delivery zones (DeliveryZone: { nome, preco, tempo, bairros: string[] }) into selectable neighborhood items
+  const availableNeighborhoods = React.useMemo(() => {
+    const list: { bairro: string; taxa: number; tempo: string; faixaNome: string }[] = [];
+    if (storeConfig.faixasEntrega && Array.isArray(storeConfig.faixasEntrega)) {
+      storeConfig.faixasEntrega.forEach((f: any) => {
+        if (Array.isArray(f.bairros)) {
+          f.bairros.forEach((b: string) => {
+            if (b && b.trim()) {
+              list.push({
+                bairro: b.trim(),
+                taxa: Number(f.preco ?? f.taxa ?? storeConfig.taxaEntregaPadrao) || 0,
+                tempo: f.tempo || storeConfig.tempoEntrega || '35-50 min',
+                faixaNome: f.nome || 'Entrega',
+              });
+            }
+          });
+        } else if (f.bairro && (f.ativo === undefined || f.ativo)) {
+          list.push({
+            bairro: String(f.bairro).trim(),
+            taxa: Number(f.taxa ?? f.preco ?? storeConfig.taxaEntregaPadrao) || 0,
+            tempo: f.tempo || `${f.tempoMedioMin || 35} min`,
+            faixaNome: f.nome || 'Entrega',
+          });
+        }
+      });
+    }
+    return list;
+  }, [storeConfig.faixasEntrega, storeConfig.taxaEntregaPadrao, storeConfig.tempoEntrega]);
+
+  // Cart & Checkout state isolated per establishment (effectiveStoreId)
   const [cart, setCart] = useState<CartItem[]>(() => {
     try {
-      const saved = localStorage.getItem('omni_public_cart');
+      const saved = localStorage.getItem(`omni_public_cart_${storeConfig.id || 'default'}`);
       if (saved) return JSON.parse(saved);
     } catch {}
     return [];
@@ -103,9 +136,6 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
   const [selectedNeighborhood, setSelectedNeighborhood] = useState<string>(() => {
     const saved = localStorage.getItem('omni_cust_bairro');
     if (saved) return saved;
-    if (storeConfig.faixasEntrega && storeConfig.faixasEntrega.length > 0) {
-      return storeConfig.faixasEntrega[0].bairro;
-    }
     return '';
   });
   const [mesaNumero, setMesaNumero] = useState('');
@@ -123,21 +153,46 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
   const [copiedPix, setCopiedPix] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
-  // Active Order Live Tracking (Firestore)
+  // Active Order Live Tracking (Firestore) isolated per establishment
   const [activeOrder, setActiveOrder] = useState<Order | null>(() => {
     try {
-      const saved = localStorage.getItem('omni_customer_active_order');
+      const saved = localStorage.getItem(`omni_customer_active_order_${storeConfig.id || 'default'}`);
       if (saved) return JSON.parse(saved);
     } catch {}
     return null;
   });
   const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
 
+  // Reload isolated cart & activeOrder when switching storeConfig.id
   useEffect(() => {
     try {
-      localStorage.setItem('omni_public_cart', JSON.stringify(cart));
+      const savedCart = localStorage.getItem(cartStorageKey);
+      setCart(savedCart ? JSON.parse(savedCart) : []);
+    } catch {
+      setCart([]);
+    }
+    try {
+      const savedOrder = localStorage.getItem(activeOrderStorageKey);
+      setActiveOrder(savedOrder ? JSON.parse(savedOrder) : null);
+    } catch {
+      setActiveOrder(null);
+    }
+    setAppliedCoupon(null);
+    setCouponFeedback(null);
+  }, [cartStorageKey, activeOrderStorageKey]);
+
+  // Default selectedNeighborhood when availableNeighborhoods loads
+  useEffect(() => {
+    if (!selectedNeighborhood && availableNeighborhoods.length > 0) {
+      setSelectedNeighborhood(availableNeighborhoods[0].bairro);
+    }
+  }, [availableNeighborhoods, selectedNeighborhood]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(cartStorageKey, JSON.stringify(cart));
     } catch {}
-  }, [cart]);
+  }, [cart, cartStorageKey]);
 
   // Subscribe to active order status updates in Firestore
   useEffect(() => {
@@ -146,12 +201,12 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
       if (updatedOrder) {
         setActiveOrder(updatedOrder);
         try {
-          localStorage.setItem('omni_customer_active_order', JSON.stringify(updatedOrder));
+          localStorage.setItem(activeOrderStorageKey, JSON.stringify(updatedOrder));
         } catch {}
       }
     });
     return () => unsubscribe();
-  }, [activeOrder?.id]);
+  }, [activeOrder?.id, activeOrderStorageKey]);
 
   // Filter products for customer
   const filteredProducts = products.filter((p) => {
@@ -264,9 +319,9 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
   // Calculate delivery fee based on neighborhood or delivery type
   const activeDeliveryFee = (() => {
     if (deliveryType !== 'delivery') return 0;
-    if (storeConfig.faixasEntrega && storeConfig.faixasEntrega.length > 0) {
-      const match = storeConfig.faixasEntrega.find(
-        (f) => f.ativo && f.bairro.toLowerCase() === selectedNeighborhood.toLowerCase()
+    if (availableNeighborhoods.length > 0 && selectedNeighborhood) {
+      const match = availableNeighborhoods.find(
+        (n) => n.bairro.toLowerCase() === selectedNeighborhood.toLowerCase()
       );
       if (match) return match.taxa;
     }
@@ -299,19 +354,26 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
     if (!code) return;
 
     const coupons = storeConfig.cupons || [];
-    const found = coupons.find((c) => c.ativo && c.codigo.toUpperCase() === code);
+    const found: any = coupons.find(
+      (c: any) => (c.ativo === undefined || c.ativo) && c.codigo.toUpperCase() === code
+    );
     if (!found) {
       setCouponFeedback('Cupom inválido ou expirado.');
       return;
     }
-    if (found.valorMinimoPedido && cartSubtotal < found.valorMinimoPedido) {
-      setCouponFeedback(`Pedido mínimo de R$ ${found.valorMinimoPedido.toFixed(2)} para este cupom.`);
+    const minVal = Number(found.minimo ?? found.valorMinimoPedido ?? 0);
+    if (minVal > 0 && cartSubtotal < minVal) {
+      setCouponFeedback(`Pedido mínimo de R$ ${minVal.toFixed(2).replace('.', ',')} para este cupom.`);
       return;
     }
+    const discountVal = Number(found.desconto ?? found.valor ?? 0);
+    const discountType: 'porcentagem' | 'fixo' =
+      found.tipo === 'fixo' ? 'fixo' : 'porcentagem';
+
     setAppliedCoupon({
       codigo: found.codigo,
-      tipo: found.tipo,
-      valor: found.valor,
+      tipo: discountType,
+      valor: discountVal,
     });
     setCouponFeedback(`Cupom ${found.codigo} aplicado com sucesso!`);
   };
@@ -467,12 +529,16 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
       console.warn('Erro ao gravar pedido no Firestore:', err);
     });
 
-    // 2. Also update local storage and dispatch local event
+    // 2. Also update local storage and dispatch local event isolated by storeId
     try {
-      const existing = localStorage.getItem('omni_kds_orders');
+      const kdsKey = `omni_kds_orders_${effectiveStoreId}`;
+      const existing = localStorage.getItem(kdsKey);
       const ordersList: Order[] = existing ? JSON.parse(existing) : [];
-      localStorage.setItem('omni_kds_orders', JSON.stringify([newOrder, ...ordersList]));
-      localStorage.setItem('omni_customer_active_order', JSON.stringify(newOrder));
+      localStorage.setItem(kdsKey, JSON.stringify([newOrder, ...ordersList]));
+      if (effectiveStoreId === 'default') {
+        localStorage.setItem('omni_kds_orders', JSON.stringify([newOrder, ...ordersList]));
+      }
+      localStorage.setItem(activeOrderStorageKey, JSON.stringify(newOrder));
       window.dispatchEvent(new CustomEvent('new_order_placed', { detail: newOrder }));
       playOrderChime();
     } catch {}
@@ -1197,7 +1263,7 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
 
                     <div>
                       <label className="block font-bold mb-1">Bairro *</label>
-                      {storeConfig.faixasEntrega && storeConfig.faixasEntrega.filter((f) => f.ativo).length > 0 ? (
+                      {availableNeighborhoods.length > 0 ? (
                         <select
                           value={selectedNeighborhood}
                           onChange={(e) => setSelectedNeighborhood(e.target.value)}
@@ -1205,13 +1271,11 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
                             isDark ? 'bg-neutral-950 border-neutral-800 text-white' : 'bg-white border-neutral-300 text-neutral-900'
                           }`}
                         >
-                          {storeConfig.faixasEntrega
-                            .filter((f) => f.ativo)
-                            .map((f) => (
-                              <option key={f.id} value={f.bairro}>
-                                {f.bairro} — Taxa R$ {f.taxa.toFixed(2).replace('.', ',')} ({f.tempoMedioMin} min)
-                              </option>
-                            ))}
+                          {availableNeighborhoods.map((item, idx) => (
+                            <option key={`${item.bairro}_${idx}`} value={item.bairro}>
+                              {item.bairro} — Taxa R$ {item.taxa.toFixed(2).replace('.', ',')} ({item.tempo})
+                            </option>
+                          ))}
                         </select>
                       ) : (
                         <input
