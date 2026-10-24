@@ -110,6 +110,47 @@ export interface DeliveryZone {
   preco: number;
   tempo: string;
   bairros: string[];
+  ativo?: boolean;
+}
+
+export interface NeighborhoodDeliveryFee {
+  id: string;
+  bairro: string;
+  regiao: string;
+  preco: number;
+  tempo: string;
+  ativo: boolean;
+}
+
+export interface StoreReview {
+  id: string;
+  storeId: string;
+  clienteNome: string;
+  nota: number; // 1 a 5
+  comentario: string;
+  criadoEm: string;
+  pratoDestaque?: string;
+}
+
+export interface FinancialExpense {
+  id: string;
+  storeId: string;
+  descricao: string;
+  categoria: 'fixo' | 'variavel' | 'imposto' | 'marketing' | 'motoboy';
+  valor: number;
+  data: string;
+}
+
+export interface CrmCustomer {
+  id: string;
+  storeId: string;
+  nome: string;
+  telefone: string;
+  totalPedidos: number;
+  totalGasto: number;
+  ultimoPedidoEm: string;
+  pratoFavorito?: string;
+  observacao?: string;
 }
 
 export interface LoyaltyTier {
@@ -159,6 +200,11 @@ export interface StoreConfig {
 
   // Recursos Integrados do Projeto
   faixasEntrega?: DeliveryZone[];
+  taxasBairros?: NeighborhoodDeliveryFee[];
+  avaliacoes?: StoreReview[];
+  despesasFinanceiras?: FinancialExpense[];
+  clientesCrm?: CrmCustomer[];
+  diasAlertaInatividade?: number;
   happyHour?: {
     ativo: boolean;
     inicio: number;
@@ -261,6 +307,7 @@ export interface CustomizationConfig {
   mensagemBoasVindas?: string;
   mostrarTempoEntrega: boolean;
   destaqueOfertas: boolean;
+  exibirFotosCardapio?: boolean;
 }
 
 export type DepartmentTab = 

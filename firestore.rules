@@ -75,7 +75,9 @@ service cloud.firestore {
     // Collection 1: Store Configuration (isolated by configId / storeId)
     match /store_config/{configId} {
       allow get, list: if true;
-      allow create, update: if (isAuthorizedForStore(configId) || isAdmin()) && isValidStoreConfig(incoming());
+      allow create: if (isAuthorizedForStore(configId) || isAdmin()) && isValidStoreConfig(incoming());
+      allow update: if ((isAuthorizedForStore(configId) || isAdmin()) && isValidStoreConfig(incoming())) ||
+        (isValidStoreConfig(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['avaliacoes', 'atualizadoEm']));
       allow delete: if isSuperAdminEmail();
     }
 

@@ -70,7 +70,67 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
   // Cart state
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [deliveryAddress, setDeliveryAddress] = useState(`${storeConfig.endereco} - ${storeConfig.bairro}`);
+  const [deliveryAddress, setDeliveryAddress] = useState(`${storeConfig.endereco}`);
+
+  // Available neighborhoods from StoreConfig (taxasBairros or faixasEntrega)
+  const availableNeighborhoods = React.useMemo(() => {
+    const list: { bairro: string; taxa: number; tempo: string; regiao: string }[] = [];
+    if (storeConfig.taxasBairros && storeConfig.taxasBairros.length > 0) {
+      storeConfig.taxasBairros.forEach((b) => {
+        if (b.ativo !== false && b.bairro.trim()) {
+          list.push({
+            bairro: b.bairro.trim(),
+            taxa: Number(b.preco) || 0,
+            tempo: b.tempo || storeConfig.tempoEntrega || '35-50 min',
+            regiao: b.regiao || 'Entrega',
+          });
+        }
+      });
+    } else if (storeConfig.faixasEntrega && storeConfig.faixasEntrega.length > 0) {
+      storeConfig.faixasEntrega.forEach((f) => {
+        if (f.ativo === false) return;
+        (f.bairros || []).forEach((bName) => {
+          if (bName && bName.trim()) {
+            list.push({
+              bairro: bName.trim(),
+              taxa: Number(f.preco) || storeConfig.taxaEntregaPadrao || 0,
+              tempo: f.tempo || storeConfig.tempoEntrega || '35-50 min',
+              regiao: f.nome || 'Entrega',
+            });
+          }
+        });
+      });
+    }
+    if (list.length === 0) {
+      list.push({
+        bairro: storeConfig.bairro || 'Centro',
+        taxa: storeConfig.taxaEntregaPadrao || 7,
+        tempo: storeConfig.tempoEntrega || '35-50 min',
+        regiao: 'Região Padrão',
+      });
+    }
+    return list;
+  }, [storeConfig.taxasBairros, storeConfig.faixasEntrega, storeConfig.bairro, storeConfig.taxaEntregaPadrao, storeConfig.tempoEntrega]);
+
+  const [selectedBairro, setSelectedBairro] = useState<string>(
+    availableNeighborhoods[0]?.bairro || storeConfig.bairro || 'Centro'
+  );
+
+  const selectedNeighborhoodRule = React.useMemo(() => {
+    return (
+      availableNeighborhoods.find(
+        (n) => n.bairro.toLowerCase() === selectedBairro.toLowerCase()
+      ) || {
+        bairro: selectedBairro || storeConfig.bairro || 'Centro',
+        taxa: storeConfig.taxaEntregaPadrao,
+        tempo: storeConfig.tempoEntrega,
+        regiao: 'Padrão',
+      }
+    );
+  }, [availableNeighborhoods, selectedBairro, storeConfig.bairro, storeConfig.taxaEntregaPadrao, storeConfig.tempoEntrega]);
+
+  const activeDeliveryFee = deliveryType === 'delivery' ? selectedNeighborhoodRule.taxa : 0;
+  const activeDeliveryTime = selectedNeighborhoodRule.tempo || storeConfig.tempoEntrega;
   
   // Payment states in Cart
   const [paymentMethod, setPaymentMethod] = useState<'PIX' | 'CartaoCredito' | 'CartaoDebito' | 'Dinheiro' | 'ValeRefeicao'>('PIX');
@@ -203,7 +263,7 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
     : 0;
 
   const cartTotal = cartSubtotal > 0
-    ? Math.max(0, cartSubtotal - pixDiscount + storeConfig.taxaEntregaPadrao)
+    ? Math.max(0, cartSubtotal - pixDiscount + activeDeliveryFee)
     : 0;
 
   // Pix Payload BRCode
@@ -251,7 +311,7 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
     if (pixDiscount > 0) {
       msg += `*Desconto Pix (${paymentConfig.pixDescontoPct}%):* -R$ ${pixDiscount.toFixed(2).replace('.', ',')}\n`;
     }
-    msg += `*Taxa de Entrega:* R$ ${storeConfig.taxaEntregaPadrao.toFixed(2).replace('.', ',')}\n`;
+    msg += `*Taxa de Entrega (${selectedNeighborhoodRule.bairro}):* R$ ${activeDeliveryFee.toFixed(2).replace('.', ',')}\n`;
     msg += `*TOTAL A PAGAR: R$ ${cartTotal.toFixed(2).replace('.', ',')}*\n\n`;
 
     let pagFormatado = 'Pix';
@@ -261,9 +321,9 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
     if (paymentMethod === 'Dinheiro') pagFormatado = `Dinheiro ${trocoPara ? `(Troco para R$ ${trocoPara})` : '(Sem troco)'}`;
     if (paymentMethod === 'ValeRefeicao') pagFormatado = `Vale Refeição / Alimentação (${valeSelecionado})`;
 
-    msg += `*Endereço:* ${deliveryAddress}\n`;
+    msg += `*Endereço:* ${deliveryAddress} - Bairro: ${selectedNeighborhoodRule.bairro}\n`;
     msg += `*Forma de Pagamento:* ${pagFormatado}\n`;
-    msg += `*Tempo estimado:* ${storeConfig.tempoEntrega}\n\n`;
+    msg += `*Tempo estimado:* ${activeDeliveryTime}\n\n`;
     msg += `Pedido enviado via cardápio online ${storeConfig.nome}!`;
 
     return msg;
@@ -287,11 +347,11 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
       clienteNome: customerName || 'Cliente Delivery',
       clienteTelefone: customerPhone || storeConfig.whatsapp,
       tipoEntrega: deliveryType,
-      endereco: deliveryType === 'delivery' ? deliveryAddress : 'Retirada no Balcão da Loja',
-      bairro: deliveryType === 'delivery' ? (storeConfig.bairro || 'Centro') : 'Balcão',
+      endereco: deliveryType === 'delivery' ? `${deliveryAddress} - ${selectedNeighborhoodRule.bairro}` : 'Retirada no Balcão da Loja',
+      bairro: deliveryType === 'delivery' ? selectedNeighborhoodRule.bairro : 'Balcão',
       itens: [...cart],
       subtotal: cartSubtotal,
-      taxaEntrega: deliveryType === 'delivery' ? storeConfig.taxaEntregaPadrao : 0,
+      taxaEntrega: activeDeliveryFee,
       desconto: pixDiscount,
       total: cartTotal,
       formaPagamento: pagFormatado,
@@ -807,17 +867,36 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
                     ))}
                   </div>
 
-                  {/* Delivery Address */}
-                  <div>
-                    <label className="text-[10px] font-bold text-neutral-400 block mb-0.5">
-                      Endereço de Entrega
-                    </label>
-                    <input
-                      type="text"
-                      value={deliveryAddress}
-                      onChange={(e) => setDeliveryAddress(e.target.value)}
-                      className="w-full px-2 py-1.5 bg-neutral-900 border border-neutral-800 rounded-lg text-white text-xs outline-none"
-                    />
+                  {/* Delivery Neighborhood & Address */}
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-neutral-400 block mb-0.5">
+                        Bairro de Entrega (Taxa &amp; Prazo por Bairro)
+                      </label>
+                      <select
+                        value={selectedBairro}
+                        onChange={(e) => setSelectedBairro(e.target.value)}
+                        className="w-full px-2 py-1.5 bg-neutral-900 border border-neutral-800 rounded-lg text-white text-xs outline-none focus:border-orange-500"
+                      >
+                        {availableNeighborhoods.map((nb) => (
+                          <option key={nb.bairro} value={nb.bairro}>
+                            {nb.bairro} ({nb.regiao}) — R$ {nb.taxa.toFixed(2).replace('.', ',')} • {nb.tempo}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-neutral-400 block mb-0.5">
+                        Endereço de Entrega (Rua e Número)
+                      </label>
+                      <input
+                        type="text"
+                        value={deliveryAddress}
+                        onChange={(e) => setDeliveryAddress(e.target.value)}
+                        className="w-full px-2 py-1.5 bg-neutral-900 border border-neutral-800 rounded-lg text-white text-xs outline-none"
+                      />
+                    </div>
                   </div>
 
                   {/* Payment Methods Selection */}
@@ -991,24 +1070,29 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
                   <div className="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 space-y-1 text-xs">
                     <div className="flex justify-between text-neutral-400">
                       <span>Subtotal</span>
-                      <span>R$ {cartSubtotal.toFixed(2).replace('.', ',')}</span>
+                      <span className="font-mono tabular-nums">R$ {cartSubtotal.toFixed(2).replace('.', ',')}</span>
                     </div>
 
                     {pixDiscount > 0 && (
                       <div className="flex justify-between text-emerald-400 font-bold">
                         <span>Desconto Pix ({paymentConfig.pixDescontoPct}%)</span>
-                        <span>-R$ {pixDiscount.toFixed(2).replace('.', ',')}</span>
+                        <span className="font-mono tabular-nums">-R$ {pixDiscount.toFixed(2).replace('.', ',')}</span>
                       </div>
                     )}
 
                     <div className="flex justify-between text-neutral-400">
-                      <span>Taxa de Entrega</span>
-                      <span>R$ {storeConfig.taxaEntregaPadrao.toFixed(2).replace('.', ',')}</span>
+                      <span>Taxa ({selectedNeighborhoodRule.bairro})</span>
+                      <span className="font-mono tabular-nums">R$ {activeDeliveryFee.toFixed(2).replace('.', ',')}</span>
+                    </div>
+
+                    <div className="flex justify-between text-neutral-500 text-[10px]">
+                      <span>Tempo estimado para {selectedNeighborhoodRule.bairro}</span>
+                      <span className="font-mono tabular-nums">{activeDeliveryTime}</span>
                     </div>
 
                     <div className="flex justify-between text-white font-black text-sm pt-1 border-t border-neutral-800">
                       <span>Total</span>
-                      <span className="text-emerald-400">R$ {cartTotal.toFixed(2).replace('.', ',')}</span>
+                      <span className="text-emerald-400 font-mono tabular-nums">R$ {cartTotal.toFixed(2).replace('.', ',')}</span>
                     </div>
                   </div>
                 </div>

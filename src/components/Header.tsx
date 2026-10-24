@@ -493,7 +493,7 @@ export const Header: React.FC<HeaderProps> = ({
             <span>Estoque</span>
           </button>
 
-          {/* TAB 4: PROMOÇÕES & CUPONS */}
+          {/* TAB 4: CRM, FIDELIDADE & CUPONS */}
           <button
             onClick={() => onTabChange('fidelidade')}
             className={`px-3.5 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
@@ -505,10 +505,10 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <Tag className="w-3.5 h-3.5 text-amber-500" />
-            <span>Cupons &amp; Fidelidade</span>
+            <span>CRM &amp; Fidelidade</span>
           </button>
 
-          {/* TAB 5: FINANCEIRO & CAIXA */}
+          {/* TAB 5: FINANCEIRO, DRE & CURVA ABC */}
           <button
             onClick={() => onTabChange('financeiro')}
             className={`px-3.5 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
@@ -520,7 +520,22 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <BarChart3 className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Caixa &amp; Relatórios</span>
+            <span>DRE &amp; Relatórios</span>
+          </button>
+
+          {/* TAB 6: FRETE POR BAIRRO & HORÁRIOS DA LOJA */}
+          <button
+            onClick={() => onTabChange('loja')}
+            className={`px-3.5 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'loja'
+                ? 'bg-orange-500 text-white shadow-xs'
+                : isDark
+                ? 'bg-neutral-800/70 text-neutral-300 hover:text-white hover:bg-neutral-800'
+                : 'bg-neutral-100 text-neutral-700 hover:text-neutral-900 hover:bg-neutral-200 border border-neutral-200/80'
+            }`}
+          >
+            <Store className="w-3.5 h-3.5 text-orange-500" />
+            <span>Frete por Bairro &amp; Loja</span>
           </button>
 
           {/* PLATFORM MANAGER EXCLUSIVE CONFIGURATION TABS */}
@@ -538,20 +553,6 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <Palette className="w-3.5 h-3.5 text-pink-500" />
                 <span>Config. Cores &amp; Marca</span>
-              </button>
-
-              <button
-                onClick={() => onTabChange('loja')}
-                className={`px-3.5 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
-                  activeTab === 'loja'
-                    ? 'bg-orange-500 text-white shadow-xs'
-                    : isDark
-                    ? 'bg-neutral-800/70 text-neutral-400 hover:text-white hover:bg-neutral-800'
-                    : 'bg-neutral-100 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200 border border-neutral-200/80'
-                }`}
-              >
-                <Store className="w-3.5 h-3.5 text-orange-500" />
-                <span>Config. Loja &amp; Frete</span>
               </button>
 
               <button

@@ -27,16 +27,18 @@ import {
   User,
   Sparkles,
   AlertCircle,
+  Star,
 } from 'lucide-react';
-import { Product, StoreConfig, CartItem, CategoryId, Order } from '../types';
+import { Product, StoreConfig, CartItem, CategoryId, Order, StoreReview } from '../types';
 import { CATEGORIAS_POR_SEGMENTO, SEGMENTOS_DISPONIVEIS } from '../data/segmentData';
 import { generatePixPayload } from '../utils/pixPayload';
 import { playOrderChime } from '../utils/soundAlert';
-import { syncOrderToFirestore, subscribeToSingleOrder } from '../services/firestoreSync';
+import { syncOrderToFirestore, subscribeToSingleOrder, syncStoreConfigToFirestore } from '../services/firestoreSync';
 
 interface PublicStorefrontViewProps {
   products: Product[];
   storeConfig: StoreConfig;
+  onSaveConfig?: (updated: StoreConfig) => void;
   onExitPublicMode?: () => void;
   showAdminReturnBar?: boolean;
 }
@@ -44,6 +46,7 @@ interface PublicStorefrontViewProps {
 export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
   products,
   storeConfig,
+  onSaveConfig,
   onExitPublicMode,
   showAdminReturnBar = false,
 }) => {
@@ -96,11 +99,63 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
   const cartStorageKey = `omni_public_cart_${effectiveStoreId}`;
   const activeOrderStorageKey = `omni_customer_active_order_${effectiveStoreId}`;
 
-  // Flatten delivery zones (DeliveryZone: { nome, preco, tempo, bairros: string[] }) into selectable neighborhood items
+  // Flatten delivery zones & individual neighborhood rules into selectable neighborhood items
   const availableNeighborhoods = React.useMemo(() => {
     const list: { bairro: string; taxa: number; tempo: string; faixaNome: string }[] = [];
-    if (storeConfig.faixasEntrega && Array.isArray(storeConfig.faixasEntrega)) {
-      storeConfig.faixasEntrega.forEach((f: any) => {
+
+    // 1. Prioritize individual neighborhood rules (taxasBairros) if configured
+    if (storeConfig.taxasBairros && Array.isArray(storeConfig.taxasBairros) && storeConfig.taxasBairros.length > 0) {
+      const inactiveRegions = new Set(
+        (storeConfig.faixasEntrega || [])
+          .filter((z) => z.ativo === false)
+          .map((z) => z.nome.trim().toLowerCase())
+      );
+
+      storeConfig.taxasBairros.forEach((rule) => {
+        if (!rule.bairro || !rule.bairro.trim()) return;
+        if (rule.ativo === false) return; // Hide paused neighborhoods
+        if (rule.regiao && inactiveRegions.has(rule.regiao.trim().toLowerCase())) return;
+
+        list.push({
+          bairro: rule.bairro.trim(),
+          taxa: Number(rule.preco ?? storeConfig.taxaEntregaPadrao) || 0,
+          tempo: rule.tempo || storeConfig.tempoEntrega || '35-50 min',
+          faixaNome: rule.regiao || 'Entrega',
+        });
+      });
+    } else {
+      // 2. Fallback to faixasEntrega or default zones
+      const defaultZones = [
+        {
+          nome: 'Região Central / Próxima',
+          preco: Math.max(4, (storeConfig.taxaEntregaPadrao || 7) - 2),
+          tempo: '20-30 min',
+          bairros: [storeConfig.bairro || 'Jd Buritis', 'Centro', 'Bela Vista', 'Tarumã'],
+          ativo: true,
+        },
+        {
+          nome: 'Região Intermediária',
+          preco: storeConfig.taxaEntregaPadrao || 7,
+          tempo: storeConfig.tempoEntrega || '35-50 min',
+          bairros: ['Vila Alta', 'Jardim dos Ipês', 'Morada do Sol', 'Parque das Mansões'],
+          ativo: true,
+        },
+        {
+          nome: 'Região Afastada',
+          preco: (storeConfig.taxaEntregaPadrao || 7) + 5,
+          tempo: '45-60 min',
+          bairros: ['Distrito Industrial', 'Jardim Califórnia', 'Altos do Tarumã'],
+          ativo: true,
+        },
+      ];
+
+      const sourceZones =
+        storeConfig.faixasEntrega && Array.isArray(storeConfig.faixasEntrega) && storeConfig.faixasEntrega.length > 0
+          ? storeConfig.faixasEntrega
+          : defaultZones;
+
+      sourceZones.forEach((f: any) => {
+        if (f.ativo === false) return;
         if (Array.isArray(f.bairros)) {
           f.bairros.forEach((b: string) => {
             if (b && b.trim()) {
@@ -122,8 +177,131 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
         }
       });
     }
-    return list;
-  }, [storeConfig.faixasEntrega, storeConfig.taxaEntregaPadrao, storeConfig.tempoEntrega]);
+
+    // Deduplicate neighborhoods by name
+    const seen = new Set<string>();
+    return list.filter((item) => {
+      const k = item.bairro.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }, [
+    storeConfig.taxasBairros,
+    storeConfig.faixasEntrega,
+    storeConfig.taxaEntregaPadrao,
+    storeConfig.tempoEntrega,
+    storeConfig.bairro,
+  ]);
+
+  // Store Reviews & Customer Ratings (isolated by effectiveStoreId)
+  const reviewsStorageKey = `omni_store_reviews_${effectiveStoreId}`;
+  const defaultReviews: StoreReview[] = React.useMemo(
+    () => [
+      {
+        id: 'rev_1',
+        storeId: effectiveStoreId,
+        clienteNome: 'Lucas Mendonça',
+        nota: 5,
+        comentario: 'Pedido chegou super rápido e bem quentinho! Embalagem impecável e sabor nota 10.',
+        pratoDestaque: products[0]?.nome || 'Especial da Casa',
+        criadoEm: new Date(Date.now() - 86400000 * 2).toISOString(),
+      },
+      {
+        id: 'rev_2',
+        storeId: effectiveStoreId,
+        clienteNome: 'Camila Rocha',
+        nota: 5,
+        comentario: 'Melhor atendimento da cidade! Pedi pelo link direto e ainda ganhei desconto no PIX.',
+        pratoDestaque: products[1]?.nome || 'Combo Casal',
+        criadoEm: new Date(Date.now() - 86400000 * 5).toISOString(),
+      },
+      {
+        id: 'rev_3',
+        storeId: effectiveStoreId,
+        clienteNome: 'Fernando Oliveira',
+        nota: 5,
+        comentario: 'Ingredientes de primeira qualidade, caprichado nos adicionais. Recomendo demais!',
+        pratoDestaque: products[2]?.nome || 'Clássico Artesanal',
+        criadoEm: new Date(Date.now() - 86400000 * 9).toISOString(),
+      },
+    ],
+    [effectiveStoreId, products]
+  );
+
+  const [reviews, setReviews] = useState<StoreReview[]>(() => {
+    if (storeConfig.avaliacoes && storeConfig.avaliacoes.length > 0) {
+      return storeConfig.avaliacoes;
+    }
+    try {
+      const saved = localStorage.getItem(reviewsStorageKey);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return defaultReviews;
+  });
+
+  useEffect(() => {
+    if (storeConfig.avaliacoes && storeConfig.avaliacoes.length > 0) {
+      setReviews(storeConfig.avaliacoes);
+    } else {
+      try {
+        const saved = localStorage.getItem(reviewsStorageKey);
+        setReviews(saved ? JSON.parse(saved) : defaultReviews);
+      } catch {
+        setReviews(defaultReviews);
+      }
+    }
+  }, [storeConfig.avaliacoes, reviewsStorageKey, defaultReviews]);
+
+  const averageRating = React.useMemo(() => {
+    if (reviews.length === 0) return 5.0;
+    const sum = reviews.reduce((acc, r) => acc + (Number(r.nota) || 5), 0);
+    return Math.round((sum / reviews.length) * 10) / 10;
+  }, [reviews]);
+
+  const [isReviewsModalOpen, setIsReviewsModalOpen] = useState(false);
+  const [newReviewRating, setNewReviewRating] = useState<number>(5);
+  const [newReviewName, setNewReviewName] = useState<string>('');
+  const [newReviewDish, setNewReviewDish] = useState<string>('');
+  const [newReviewComment, setNewReviewComment] = useState<string>('');
+  const [reviewFeedback, setReviewFeedback] = useState<string | null>(null);
+
+  const handleSubmitReview = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newReviewName.trim() || !newReviewComment.trim()) {
+      setReviewFeedback('Preencha seu nome e um breve comentário sobre sua experiência.');
+      return;
+    }
+    const created: StoreReview = {
+      id: 'rev_' + Date.now(),
+      storeId: effectiveStoreId,
+      clienteNome: newReviewName.trim(),
+      nota: newReviewRating,
+      comentario: newReviewComment.trim(),
+      pratoDestaque: newReviewDish.trim() || undefined,
+      criadoEm: new Date().toISOString(),
+    };
+    const updatedList = [created, ...reviews];
+    setReviews(updatedList);
+    try {
+      localStorage.setItem(reviewsStorageKey, JSON.stringify(updatedList));
+    } catch {}
+
+    const updatedConfig: StoreConfig = {
+      ...storeConfig,
+      avaliacoes: updatedList,
+    };
+    if (onSaveConfig) {
+      onSaveConfig(updatedConfig);
+    } else {
+      syncStoreConfigToFirestore(updatedConfig, effectiveStoreId).catch(() => {});
+    }
+
+    setNewReviewComment('');
+    setNewReviewDish('');
+    setReviewFeedback('Avaliação publicada com sucesso! Obrigado pelo seu carinho.');
+    setTimeout(() => setReviewFeedback(null), 3500);
+  };
 
   // Cart & Checkout state isolated per establishment (effectiveStoreId)
   const [cart, setCart] = useState<CartItem[]>(() => {
@@ -346,17 +524,96 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
 
   const cartSubtotal = cart.reduce((acc, curr) => acc + curr.subtotal, 0);
 
+  // Smart Upsell: Suggest drinks and desserts not yet in the cart
+  const upsellSuggestions = React.useMemo(() => {
+    const cartProductIds = new Set(cart.map((c) => c.produto.id));
+    const available = products.filter((p) => p.disponivel && !cartProductIds.has(p.id));
+
+    const drinkOrDessertKeywords = [
+      'bebida',
+      'refrigerante',
+      'suco',
+      'agua',
+      'água',
+      'coca',
+      'guarana',
+      'guaraná',
+      'cerveja',
+      'heineken',
+      'sobremesa',
+      'doce',
+      'brownie',
+      'pudim',
+      'bolo',
+      'torta',
+      'petit',
+      'sorvete',
+      'milkshake',
+      'shake',
+      'acai',
+      'açaí',
+      'acompanhamento',
+      'porcao',
+      'porção',
+      'batata',
+    ];
+
+    const matched = available.filter((p) => {
+      const catLower = (p.categoria || '').toLowerCase();
+      const nameLower = (p.nome || '').toLowerCase();
+      return drinkOrDessertKeywords.some((kw) => catLower.includes(kw) || nameLower.includes(kw));
+    });
+
+    if (matched.length >= 3) {
+      return matched.slice(0, 4);
+    }
+
+    // Fill remaining slots with lowest-priced available products as impulse add-ons
+    const matchedIds = new Set(matched.map((m) => m.id));
+    const others = available
+      .filter((p) => !matchedIds.has(p.id))
+      .sort((a, b) => (a.precoPromocional || a.preco) - (b.precoPromocional || b.preco));
+
+    return [...matched, ...others].slice(0, 4);
+  }, [products, cart]);
+
+  const handleQuickAddUpsell = (product: Product) => {
+    const unitPrice = product.precoPromocional || product.preco;
+    const existingIndex = cart.findIndex(
+      (item) => item.produto.id === product.id && item.opcoesSelecionadas.length === 0 && !item.saboresMeioAMeio
+    );
+    if (existingIndex >= 0) {
+      updateCartQty(existingIndex, 1);
+      return;
+    }
+    const newItem: CartItem = {
+      id: 'cart_upsell_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      produto: product,
+      quantidade: 1,
+      opcoesSelecionadas: [],
+      subtotal: unitPrice,
+    };
+    setCart([...cart, newItem]);
+  };
+
+  // Find active neighborhood object for dynamic delivery fee & estimated time
+  const activeNeighborhoodObj = React.useMemo(() => {
+    if (deliveryType !== 'delivery' || !selectedNeighborhood) return null;
+    return (
+      availableNeighborhoods.find(
+        (n) => n.bairro.toLowerCase() === selectedNeighborhood.toLowerCase()
+      ) || null
+    );
+  }, [deliveryType, selectedNeighborhood, availableNeighborhoods]);
+
   // Calculate delivery fee based on neighborhood or delivery type
   const activeDeliveryFee = (() => {
     if (deliveryType !== 'delivery') return 0;
-    if (availableNeighborhoods.length > 0 && selectedNeighborhood) {
-      const match = availableNeighborhoods.find(
-        (n) => n.bairro.toLowerCase() === selectedNeighborhood.toLowerCase()
-      );
-      if (match) return match.taxa;
-    }
+    if (activeNeighborhoodObj) return activeNeighborhoodObj.taxa;
     return storeConfig.taxaEntregaPadrao || 0;
   })();
+
+  const activeDeliveryTime = activeNeighborhoodObj?.tempo || storeConfig.tempoEntrega || '35-50 min';
 
   // Calculate Pix discount
   const pixDiscount =
@@ -693,9 +950,20 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
                 {storeConfig.slogan}
               </p>
               <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[11px] text-neutral-300">
+                <button
+                  type="button"
+                  onClick={() => setIsReviewsModalOpen(true)}
+                  className="px-2 py-0.5 rounded-lg bg-amber-500/20 border border-amber-400/40 text-amber-300 font-black flex items-center gap-1 hover:bg-amber-500/30 transition cursor-pointer font-mono tabular-nums"
+                  title="Ver avaliações dos clientes ou avaliar esta loja"
+                >
+                  <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                  <span>{averageRating.toFixed(1)}</span>
+                  <span className="font-sans font-semibold text-neutral-200">({reviews.length})</span>
+                </button>
+                <span>•</span>
                 <span className="flex items-center gap-1">
                   <Clock className="w-3.5 h-3.5 text-orange-400" />
-                  {storeConfig.tempoEntrega}
+                  {activeDeliveryTime}
                 </span>
                 <span>•</span>
                 <span className="flex items-center gap-1">
@@ -710,10 +978,10 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
 
       {/* Main Storefront Container */}
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-5 pb-28 space-y-5">
-        {/* Welcome Notice / Pix Promo Banner */}
-        {(storeConfig.customizacao?.mensagemBoasVindas || paymentConfig.pixDescontoPct > 0) && (
+        {/* Welcome Notice / Pix Promo & Customer Reviews Bar */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
           <div
-            className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+            className={`md:col-span-7 p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
               isDark ? 'bg-neutral-900/90 border-neutral-800' : 'bg-white border-neutral-200 shadow-xs'
             }`}
           >
@@ -726,11 +994,49 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
             </div>
             {paymentConfig.pixDescontoPct > 0 && (
               <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-500 text-xs font-black whitespace-nowrap self-start sm:self-auto">
-                ⚡ {paymentConfig.pixDescontoPct}% OFF pagando no PIX
+                ⚡ {paymentConfig.pixDescontoPct}% OFF no PIX
               </span>
             )}
           </div>
-        )}
+
+          <div
+            onClick={() => setIsReviewsModalOpen(true)}
+            className={`md:col-span-5 p-3.5 rounded-2xl border flex items-center justify-between gap-3 cursor-pointer transition ${
+              isDark
+                ? 'bg-neutral-900/90 border-neutral-800 hover:border-amber-500/40'
+                : 'bg-white border-neutral-200 hover:border-amber-400 shadow-xs'
+            }`}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 font-black text-sm shrink-0 font-mono tabular-nums">
+                {averageRating.toFixed(1)}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1">
+                  {[1, 2, 3, 4, 5].map((st) => (
+                    <Star
+                      key={st}
+                      className={`w-3 h-3 ${
+                        st <= Math.round(averageRating)
+                          ? 'fill-amber-400 text-amber-400'
+                          : 'text-neutral-600'
+                      }`}
+                    />
+                  ))}
+                  <span className="text-[11px] font-bold text-neutral-400 ml-1">
+                    ({reviews.length} avaliações)
+                  </span>
+                </div>
+                <p className="text-[11px] truncate text-neutral-400 mt-0.5">
+                  {reviews[0] ? `"${reviews[0].comentario}" — ${reviews[0].clienteNome}` : 'Clique para avaliar a loja'}
+                </p>
+              </div>
+            </div>
+            <span className="px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[11px] font-black whitespace-nowrap shrink-0">
+              Avaliar
+            </span>
+          </div>
+        </div>
 
         {/* Search & Categories Sticky Bar */}
         <div
@@ -1232,7 +1538,7 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
                       {item.observacoes && (
                         <p className="text-[11px] text-orange-400 italic">Obs: {item.observacoes}</p>
                       )}
-                      <p className="text-emerald-500 font-black mt-1">
+                      <p className="text-emerald-500 font-black mt-1 font-mono tabular-nums">
                         R$ {item.subtotal.toFixed(2).replace('.', ',')}
                       </p>
                     </div>
@@ -1244,7 +1550,7 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
                       >
                         <Minus className="w-3.5 h-3.5" />
                       </button>
-                      <span className="font-black w-5 text-center">{item.quantidade}</span>
+                      <span className="font-black w-5 text-center font-mono tabular-nums">{item.quantidade}</span>
                       <button
                         onClick={() => updateCartQty(idx, 1)}
                         className="p-1.5 rounded-lg bg-neutral-800 text-white hover:bg-neutral-700 cursor-pointer"
@@ -1255,6 +1561,63 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
                   </div>
                 ))}
               </div>
+
+              {/* SMART UPSELL: SUGESTÃO DE BEBIDAS E SOBREMESAS NO CARRINHO */}
+              {upsellSuggestions.length > 0 && (
+                <div
+                  className={`p-3.5 rounded-2xl border space-y-2.5 ${
+                    isDark
+                      ? 'bg-orange-500/5 border-orange-500/25'
+                      : 'bg-orange-50/70 border-orange-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-orange-500 flex items-center gap-1.5 text-xs">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Que tal uma bebida gelada ou sobremesa?</span>
+                    </span>
+                    <span className="text-[10px] font-bold text-neutral-400">Adicione com 1 clique</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {upsellSuggestions.map((sug) => {
+                      const sugPrice = sug.precoPromocional || sug.preco;
+                      return (
+                        <div
+                          key={sug.id}
+                          className={`p-2 rounded-xl border flex items-center justify-between gap-2.5 ${
+                            isDark ? 'bg-neutral-950 border-neutral-800' : 'bg-white border-neutral-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            {sug.foto && (
+                              <img
+                                src={sug.foto}
+                                alt={sug.nome}
+                                className="w-10 h-10 rounded-lg object-cover shrink-0 bg-neutral-800"
+                              />
+                            )}
+                            <div className="min-w-0">
+                              <p className="font-bold text-xs truncate">{sug.nome}</p>
+                              <p className="text-[11px] font-black text-emerald-500 font-mono tabular-nums">
+                                + R$ {sugPrice.toFixed(2).replace('.', ',')}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickAddUpsell(sug)}
+                            className="px-2.5 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-400 text-neutral-950 font-black text-[11px] flex items-center gap-1 shrink-0 transition cursor-pointer"
+                          >
+                            <Plus className="w-3 h-3 stroke-[3]" />
+                            <span>Adicionar</span>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Customer Identification */}
               <div className="space-y-3 pt-2 border-t border-neutral-800/60">
@@ -1357,32 +1720,28 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
                     </div>
 
                     <div>
-                      <label className="block font-bold mb-1">Bairro *</label>
-                      {availableNeighborhoods.length > 0 ? (
-                        <select
-                          value={selectedNeighborhood}
-                          onChange={(e) => setSelectedNeighborhood(e.target.value)}
-                          className={`w-full px-3 py-2 rounded-xl border font-bold outline-none ${
-                            isDark ? 'bg-neutral-950 border-neutral-800 text-white' : 'bg-white border-neutral-300 text-neutral-900'
-                          }`}
-                        >
-                          {availableNeighborhoods.map((item, idx) => (
-                            <option key={`${item.bairro}_${idx}`} value={item.bairro}>
-                              {item.bairro} — Taxa R$ {item.taxa.toFixed(2).replace('.', ',')} ({item.tempo})
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          type="text"
-                          value={selectedNeighborhood}
-                          onChange={(e) => setSelectedNeighborhood(e.target.value)}
-                          placeholder="Informe seu bairro"
-                          className={`w-full px-3 py-2 rounded-xl border outline-none ${
-                            isDark ? 'bg-neutral-950 border-neutral-800 text-white' : 'bg-white border-neutral-300 text-neutral-900'
-                          }`}
-                        />
-                      )}
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="font-bold">Selecione seu Bairro / Região (Cálculo Automático de Taxa) *</label>
+                        <span className="text-[11px] font-black text-emerald-500 font-mono tabular-nums">
+                          Frete: R$ {activeDeliveryFee.toFixed(2).replace('.', ',')} • {activeDeliveryTime}
+                        </span>
+                      </div>
+                      <select
+                        value={selectedNeighborhood}
+                        onChange={(e) => setSelectedNeighborhood(e.target.value)}
+                        className={`w-full px-3 py-2 rounded-xl border font-bold outline-none ${
+                          isDark ? 'bg-neutral-950 border-neutral-800 text-white' : 'bg-white border-neutral-300 text-neutral-900'
+                        }`}
+                      >
+                        {availableNeighborhoods.map((item, idx) => (
+                          <option key={`${item.bairro}_${idx}`} value={item.bairro}>
+                            {item.bairro} ({item.faixaNome}) — Taxa R$ {item.taxa.toFixed(2).replace('.', ',')} • {item.tempo}
+                          </option>
+                        ))}
+                        <option value="Outro Bairro">
+                          Outro Bairro — Taxa Padrão R$ {(storeConfig.taxaEntregaPadrao || 7).toFixed(2).replace('.', ',')} ({storeConfig.tempoEntrega})
+                        </option>
+                      </select>
                     </div>
                   </div>
                 )}
@@ -1738,6 +2097,179 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
               >
                 Voltar ao Cardápio
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CUSTOMER REVIEWS & STORE RATING MODAL */}
+      {isReviewsModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div
+            className={`w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[90vh] flex flex-col overflow-hidden border shadow-2xl ${
+              isDark ? 'bg-neutral-900 border-neutral-800 text-white' : 'bg-white border-neutral-200 text-neutral-900'
+            }`}
+          >
+            {/* Header */}
+            <div
+              className={`p-4 border-b flex items-center justify-between ${
+                isDark ? 'border-neutral-800 bg-neutral-950' : 'border-neutral-200 bg-neutral-50'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 font-black text-sm font-mono tabular-nums">
+                  {averageRating.toFixed(1)}
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black">Avaliações de {storeConfig.nome}</h3>
+                  <p className="text-[11px] text-neutral-400">
+                    {reviews.length} avaliações verificadas de clientes
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsReviewsModalOpen(false)}
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 overflow-y-auto space-y-5 flex-1 text-xs">
+              {/* Submit Review Form */}
+              <form
+                onSubmit={handleSubmitReview}
+                className={`p-4 rounded-2xl border space-y-3 ${
+                  isDark ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-50 border-neutral-200'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-black text-amber-400 uppercase tracking-wider">
+                    Deixe sua Avaliação
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setNewReviewRating(star)}
+                        className="p-0.5 cursor-pointer transition transform hover:scale-110"
+                      >
+                        <Star
+                          className={`w-5 h-5 ${
+                            star <= newReviewRating
+                              ? 'fill-amber-400 text-amber-400'
+                              : 'text-neutral-600'
+                          }`}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block font-bold mb-1">Seu Nome *</label>
+                    <input
+                      type="text"
+                      value={newReviewName}
+                      onChange={(e) => setNewReviewName(e.target.value)}
+                      placeholder="Ex: Mariana Costa"
+                      className={`w-full px-3 py-2 rounded-xl border outline-none ${
+                        isDark
+                          ? 'bg-neutral-900 border-neutral-800 text-white'
+                          : 'bg-white border-neutral-300 text-neutral-900'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">Item Favorito (Opcional)</label>
+                    <select
+                      value={newReviewDish}
+                      onChange={(e) => setNewReviewDish(e.target.value)}
+                      className={`w-full px-3 py-2 rounded-xl border outline-none ${
+                        isDark
+                          ? 'bg-neutral-900 border-neutral-800 text-white'
+                          : 'bg-white border-neutral-300 text-neutral-900'
+                      }`}
+                    >
+                      <option value="">Selecione um item...</option>
+                      {products.map((p) => (
+                        <option key={p.id} value={p.nome}>
+                          {p.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold mb-1">Seu Comentário *</label>
+                  <textarea
+                    rows={2}
+                    value={newReviewComment}
+                    onChange={(e) => setNewReviewComment(e.target.value)}
+                    placeholder="Conte como foi o sabor, entrega e atendimento..."
+                    className={`w-full px-3 py-2 rounded-xl border outline-none ${
+                      isDark
+                        ? 'bg-neutral-900 border-neutral-800 text-white'
+                        : 'bg-white border-neutral-300 text-neutral-900'
+                    }`}
+                  />
+                </div>
+
+                {reviewFeedback && (
+                  <p className="text-[11px] font-bold text-emerald-400">{reviewFeedback}</p>
+                )}
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-black text-xs transition cursor-pointer"
+                >
+                  Publicar Avaliação ({newReviewRating} Estrelas)
+                </button>
+              </form>
+
+              {/* Reviews List */}
+              <div className="space-y-2.5">
+                <h4 className="font-black uppercase tracking-wider text-neutral-400">
+                  Comentários Recentes ({reviews.length})
+                </h4>
+                {reviews.map((rev) => (
+                  <div
+                    key={rev.id}
+                    className={`p-3.5 rounded-2xl border space-y-1.5 ${
+                      isDark ? 'bg-neutral-950/70 border-neutral-800' : 'bg-white border-neutral-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-sm">{rev.clienteNome}</span>
+                      <div className="flex items-center gap-0.5">
+                        {[1, 2, 3, 4, 5].map((st) => (
+                          <Star
+                            key={st}
+                            className={`w-3.5 h-3.5 ${
+                              st <= rev.nota ? 'fill-amber-400 text-amber-400' : 'text-neutral-700'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <p className={`text-xs leading-relaxed ${isDark ? 'text-neutral-300' : 'text-neutral-700'}`}>
+                      &ldquo;{rev.comentario}&rdquo;
+                    </p>
+                    <div className="flex items-center justify-between text-[10px] text-neutral-500 pt-1">
+                      {rev.pratoDestaque ? (
+                        <span className="text-orange-400 font-semibold">Pediu: {rev.pratoDestaque}</span>
+                      ) : (
+                        <span>Cliente Verificado</span>
+                      )}
+                      <span>{new Date(rev.criadoEm).toLocaleDateString('pt-BR')}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

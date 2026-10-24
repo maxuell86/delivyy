@@ -100,7 +100,7 @@ export default function App() {
         setActiveTab('pedidos');
       } else {
         setActiveTab((prev) =>
-          ['customizacao', 'loja', 'simulador', 'producao', 'diagnostico'].includes(prev) ? 'operacao' : prev
+          ['customizacao', 'simulador', 'producao', 'diagnostico'].includes(prev) ? 'operacao' : prev
         );
       }
     }
@@ -567,6 +567,7 @@ export default function App() {
       <PublicStorefrontView
         products={products}
         storeConfig={storeConfig}
+        onSaveConfig={saveStoreConfig}
         showAdminReturnBar={openedFromAdmin || isAdmin}
         onExitPublicMode={() => {
           setIsPublicStorefront(false);
@@ -1077,11 +1078,14 @@ export default function App() {
           />
         )}
 
-        {/* DEP 4: FINANCEIRO & RELATÓRIOS (RECHARTS) */}
+        {/* DEP 4: FINANCEIRO, DRE AUTOMÁTICO & CURVA ABC */}
         {(activeTab === 'financeiro' || activeTab === 'relatorios') && (
           <ReportsView
+            storeId={activeStoreId}
             products={products}
             storeConfig={storeConfig}
+            onSaveConfig={saveStoreConfig}
+            showToast={showToast}
           />
         )}
 
@@ -1104,9 +1108,11 @@ export default function App() {
           />
         )}
 
-        {/* PROGRAMA DE FIDELIDADE & CUPONS */}
+        {/* CRM DE CLIENTES INATIVOS, PROGRAMA DE FIDELIDADE & CUPONS */}
         {activeTab === 'fidelidade' && (
           <LoyaltyCouponsView
+            storeId={activeStoreId}
+            products={products}
             storeConfig={storeConfig}
             onSaveConfig={saveStoreConfig}
             showToast={showToast}
