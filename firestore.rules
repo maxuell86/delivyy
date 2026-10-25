@@ -80,36 +80,31 @@ service cloud.firestore {
     // Collection 1: Store Configuration (isolated by configId / storeId)
     match /store_config/{configId} {
       allow get, list: if true;
-      allow create: if isAuthorizedForStore(configId) && isValidStoreConfig(incoming());
-      allow update: if (isAuthorizedForStore(configId) && isValidStoreConfig(incoming())) ||
-        (isValidStoreConfig(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['avaliacoes', 'atualizadoEm']));
-      allow delete: if isSuperAdminEmail();
+      allow create, update: if isValidStoreConfig(incoming());
+      allow delete: if isValidId(configId);
     }
 
     // Collection 2: Products Menu (isolated by storeId)
     match /products/{productId} {
       allow get, list: if true;
-      allow create: if isAuthorizedForStore(docStoreId(incoming())) && isValidId(productId) && isValidProduct(incoming()) && incoming().id == productId;
-      allow update: if (isAuthorizedForStore(docStoreId(existing())) && isAuthorizedForStore(docStoreId(incoming())) && isValidId(productId) && isValidProduct(incoming())) ||
-        (isValidId(productId) && isValidProduct(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['estoqueAtual', 'disponivel', 'atualizadoEm']));
-      allow delete: if isAuthorizedForStore(docStoreId(existing())) && isValidId(productId);
+      allow create, update: if isValidId(productId) && isValidProduct(incoming());
+      allow delete: if isValidId(productId);
     }
 
     // Collection 3: Kitchen & Delivery Orders (isolated by storeId)
     match /orders/{orderId} {
       allow get, list: if true;
       allow create: if isValidId(orderId) && isValidOrder(incoming()) && incoming().id == orderId;
-      allow update: if isAuthorizedForStore(docStoreId(existing())) && isValidId(orderId) && 
+      allow update: if isValidId(orderId) && 
         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'atualizadoEm', 'updatedAt']);
-      allow delete: if isAuthorizedForStore(docStoreId(existing())) && isValidId(orderId);
+      allow delete: if isValidId(orderId);
     }
 
     // Collection 4: Admin Team Members & Store Bindings
     match /admins/{userId} {
-      allow get: if isSignedIn();
-      allow list: if isSignedIn();
-      allow create, update: if (isSuperAdminEmail() || isAdmin() || (isSignedIn() && request.auth.uid == userId)) && isValidId(userId) && isValidAdminUser(incoming());
-      allow delete: if (isSuperAdminEmail() || isAdmin()) && request.auth.uid != userId;
+      allow get, list: if true;
+      allow create, update: if isValidId(userId) && isValidAdminUser(incoming());
+      allow delete: if isValidId(userId);
     }
   }
 }

@@ -197,8 +197,12 @@ export interface StoreConfig {
   // Vínculo de Gerente e Controle Comercial SaaS (Gerente da Plataforma)
   gerenteEmail?: string;
   gerenteNome?: string;
-  statusLicenca?: 'ativo' | 'implantacao' | 'suspenso';
+  gerenteSenha?: string;
+  statusLicenca?: 'ativo' | 'implantacao' | 'atrasado' | 'suspenso';
   planoMensal?: string;
+  valorMensalidade?: number;
+  diaVencimento?: number;
+  motivoBloqueio?: string;
   criadoEm?: string;
 
   // Recursos Integrados do Projeto
@@ -232,6 +236,7 @@ export interface AdminMemberRecord {
   uid: string;
   email: string;
   nome?: string;
+  senha?: string;
   role: UserRole;
   storeId: string; // ID do estabelecimento vinculado (ou 'all' para Super Admin da Plataforma)
   storeName?: string;

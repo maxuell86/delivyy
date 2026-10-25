@@ -13,9 +13,11 @@ import {
   Crown,
   Building2,
   Eye,
+  EyeOff,
   Lock,
+  KeyRound,
 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, LOCAL_TEAM_CACHE_KEY } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -24,6 +26,7 @@ import { StoreConfig, UserRole } from '../types';
 interface AdminMember {
   uid: string;
   email: string;
+  senha?: string;
   role: UserRole;
   storeId: string;
   storeName?: string;
@@ -66,9 +69,11 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
   const [members, setMembers] = useState<AdminMember[]>([]);
   const [newEmail, setNewEmail] = useState('');
   const [newNome, setNewNome] = useState('');
+  const [newPassword, setNewPassword] = useState('123456');
   const [newRole, setNewRole] = useState<UserRole>('store_manager');
   const [selectedStoreId, setSelectedStoreId] = useState<string>(activeStoreId || 'default');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [revealedIds, setRevealedIds] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (assignedStoreId && !isSuperAdmin) {
@@ -109,6 +114,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
             list.push({
               uid: docSnap.id,
               email: data.email || docSnap.id,
+              senha: data.senha || '123456',
               role: (data.role as UserRole) || 'store_manager',
               storeId: data.storeId || 'default',
               storeName: data.storeName,
@@ -125,10 +131,18 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
               byEmail.set(key, item);
             }
           });
-          setMembers(Array.from(byEmail.values()));
+          const deduped = Array.from(byEmail.values());
+          setMembers(deduped);
+          try {
+            localStorage.setItem(LOCAL_TEAM_CACHE_KEY, JSON.stringify(deduped));
+          } catch {}
         },
         (error) => {
           console.warn('Carregamento de equipe em modo offline:', error);
+          try {
+            const cached = localStorage.getItem(LOCAL_TEAM_CACHE_KEY);
+            if (cached) setMembers(JSON.parse(cached));
+          } catch {}
         }
       );
       return () => unsubscribe();
@@ -154,7 +168,11 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEmail.trim()) {
-      showToast('Por favor, informe o e-mail Google do usuário.');
+      showToast('Por favor, informe o e-mail de login do usuário.');
+      return;
+    }
+    if (!newPassword.trim()) {
+      showToast('Defina uma senha ou PIN de acesso para o usuário.');
       return;
     }
 
@@ -169,6 +187,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
         uid: memberId,
         email: emailSanitized,
         nome: newNome.trim() || emailSanitized.split('@')[0],
+        senha: newPassword.trim(),
         role: newRole,
         storeId: targetStoreId,
         storeName: targetStoreName,
@@ -177,26 +196,37 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
 
       await setDoc(doc(db, 'admins', memberId), newMemberData, { merge: true });
 
-      // Se o cargo for Gerente do Estabelecimento, também registra gerenteEmail na config da loja
+      // Update local cache immediately as well
+      try {
+        const updatedCache = [
+          ...members.filter((m) => m.email.toLowerCase() !== emailSanitized),
+          newMemberData,
+        ];
+        localStorage.setItem(LOCAL_TEAM_CACHE_KEY, JSON.stringify(updatedCache));
+      } catch {}
+
+      // Se o cargo for Gerente do Estabelecimento, também registra gerenteEmail e gerenteSenha na config da loja
       if (newRole === 'store_manager' || newRole === 'admin') {
         await setDoc(
           doc(db, 'store_config', targetStoreId),
           {
             gerenteEmail: emailSanitized,
             gerenteNome: newMemberData.nome,
+            gerenteSenha: newMemberData.senha,
           },
           { merge: true }
         );
       }
 
       showToast(
-        `Login ${emailSanitized} vinculado exclusivamente ao estabelecimento "${targetStoreName}"!`
+        `Login ${emailSanitized} (Senha: ${newMemberData.senha}) vinculado ao estabelecimento "${targetStoreName}"!`
       );
       setNewEmail('');
       setNewNome('');
+      setNewPassword('123456');
     } catch (error) {
       console.error('Erro ao vincular login ao estabelecimento:', error);
-      showToast('Erro ao salvar vínculo no Firestore. Verifique se você está autenticado.');
+      showToast('Erro ao salvar vínculo no Firestore.');
     } finally {
       setIsSubmitting(false);
     }
@@ -226,10 +256,10 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
             </div>
             <div>
               <h3 className={`font-black text-lg ${isDark ? 'text-white' : 'text-neutral-900'}`}>
-                Controle de Acessos &amp; Vínculo por Estabelecimento
+                Controle de Acessos, Senhas &amp; Vínculo por Loja
               </h3>
               <p className={`text-xs ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-                Cada login tem acesso estrito e isolado somente às informações do seu próprio estabelecimento
+                Cadastre e-mail e senha/PIN para Gerentes, Cozinha (KDS) e Atendentes de cada estabelecimento
               </p>
             </div>
           </div>
@@ -290,7 +320,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                       Nenhum Usuário Conectado
                     </span>
                     <span className={`text-xs ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-                      Entre com sua Conta Google para carregar o estabelecimento vinculado ao seu login
+                      Entre com seu login para carregar o estabelecimento vinculado
                     </span>
                   </div>
                 </div>
@@ -300,7 +330,10 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
             <div>
               {user ? (
                 <button
-                  onClick={signOut}
+                  onClick={() => {
+                    onClose();
+                    signOut();
+                  }}
                   className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap ${
                     isDark
                       ? 'bg-neutral-800 hover:bg-neutral-700 text-red-400 border-neutral-700'
@@ -322,12 +355,12 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
             </div>
           </div>
 
-          {/* Form: Bind Login to Specific Establishment */}
+          {/* Form: Bind Login & Password to Specific Establishment */}
           <form onSubmit={handleAddMember} className={`p-4 rounded-xl border space-y-4 ${innerBg}`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-bold text-orange-500">
                 <Plus className="w-4 h-4" />
-                <span>Vincular Login de Gerente ou Equipe a um Estabelecimento Específico</span>
+                <span>Cadastrar / Atualizar Login e Senha para um Estabelecimento</span>
               </div>
               <span className="text-[11px] text-neutral-400 flex items-center gap-1">
                 <Lock className="w-3 h-3 text-emerald-500" />
@@ -338,7 +371,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
               <div className="sm:col-span-3">
                 <label className={`block text-[11px] font-semibold mb-1 ${isDark ? 'text-neutral-300' : 'text-neutral-700'}`}>
-                  Nome do Responsável
+                  Nome do Usuário
                 </label>
                 <input
                   type="text"
@@ -351,23 +384,39 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                 />
               </div>
 
-              <div className="sm:col-span-4">
+              <div className="sm:col-span-3">
                 <label className={`block text-[11px] font-semibold mb-1 ${isDark ? 'text-neutral-300' : 'text-neutral-700'}`}>
-                  E-mail Google do Login *
+                  E-mail de Login *
                 </label>
                 <input
                   type="email"
                   required
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
-                  placeholder="gerente.loja@gmail.com"
+                  placeholder="gerente@loja.com"
                   className={`w-full px-3 py-2 border rounded-xl text-xs outline-none focus:border-orange-500 ${
                     isDark ? 'bg-neutral-900 border-neutral-700 text-white' : 'bg-white border-neutral-300 text-neutral-900'
                   }`}
                 />
               </div>
 
-              <div className="sm:col-span-5">
+              <div className="sm:col-span-2">
+                <label className={`block text-[11px] font-semibold mb-1 ${isDark ? 'text-neutral-300' : 'text-neutral-700'}`}>
+                  Senha / PIN *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="123456"
+                  className={`w-full px-3 py-2 border rounded-xl text-xs font-mono outline-none focus:border-orange-500 ${
+                    isDark ? 'bg-neutral-900 border-neutral-700 text-white' : 'bg-white border-neutral-300 text-neutral-900'
+                  }`}
+                />
+              </div>
+
+              <div className="sm:col-span-4">
                 <label className={`block text-[11px] font-semibold mb-1 ${isDark ? 'text-neutral-300' : 'text-neutral-700'}`}>
                   Estabelecimento Vinculado *
                 </label>
@@ -393,12 +442,12 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
 
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] font-semibold text-neutral-400">Nível de Visão:</span>
+                <span className="text-[11px] font-semibold text-neutral-400">Perfil de Acesso:</span>
                 {(
                   [
-                    { id: 'store_manager', label: 'Gerente do Estabelecimento (Visão Operacional)' },
-                    { id: 'kitchen', label: 'Cozinha (Direto no KDS)' },
-                    { id: 'attendant', label: 'Atendente / Caixa' },
+                    { id: 'store_manager', label: 'Gerente do Estabelecimento' },
+                    { id: 'kitchen', label: 'Cozinha (Apenas KDS)' },
+                    { id: 'attendant', label: 'Atendente / Caixa PDV' },
                   ] as const
                 ).map((roleOpt) => (
                   <button
@@ -424,7 +473,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer whitespace-nowrap disabled:opacity-50"
               >
                 <Check className="w-3.5 h-3.5" />
-                <span>Vincular Login à Loja</span>
+                <span>Salvar Login &amp; Senha</span>
               </button>
             </div>
           </form>
@@ -452,7 +501,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                       <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-neutral-400">
                         <span className="text-orange-500 font-semibold">Gerente da Plataforma (Super Admin)</span>
                         <span aria-hidden="true">·</span>
-                        <span>Controle total de configurações, implantação e clientes</span>
+                        <span>Senha padrão: <code className="text-emerald-400">admin123</code> (ou Google)</span>
                       </div>
                     </div>
                   </div>
@@ -465,12 +514,13 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
               {/* Dynamic Bound Logins */}
               {visibleMembers.length === 0 ? (
                 <div className={`p-6 rounded-xl border text-center text-xs text-neutral-400 ${innerBg}`}>
-                  Nenhum login de gerente de estabelecimento vinculado ainda. Utilize o formulário acima para vincular o
-                  e-mail do seu cliente ao estabelecimento dele.
+                  Nenhum login de gerente ou equipe vinculado ainda. Utilize o formulário acima para criar o
+                  e-mail e senha do gerente ou da cozinha do estabelecimento.
                 </div>
               ) : (
                 visibleMembers.map((m) => {
                   const boundStoreName = resolveStoreName(m.storeId, m.storeName);
+                  const isRevealed = Boolean(revealedIds[m.uid]);
                   return (
                     <div
                       key={m.uid}
@@ -490,6 +540,24 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                             </span>
                             <span aria-hidden="true">·</span>
                             <span>{ROLE_LABELS[m.role] || m.role}</span>
+                            <span aria-hidden="true">·</span>
+                            <span className="inline-flex items-center gap-1">
+                              <KeyRound className="w-3 h-3 text-orange-400" />
+                              <span>Senha:</span>
+                              <code className="text-orange-400 font-bold">
+                                {isRevealed ? m.senha || '123456' : '••••••'}
+                              </code>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setRevealedIds((prev) => ({ ...prev, [m.uid]: !prev[m.uid] }))
+                                }
+                                className="text-neutral-400 hover:text-white ml-0.5 cursor-pointer"
+                                title={isRevealed ? 'Ocultar senha' : 'Ver senha'}
+                              >
+                                {isRevealed ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                              </button>
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -571,4 +639,3 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
     </div>
   );
 };
-

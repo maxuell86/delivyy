@@ -13,6 +13,11 @@ import {
   AlertTriangle,
   ExternalLink,
   CheckCircle2,
+  Mail,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Headset,
 } from 'lucide-react';
 import { useAuth, SUPER_ADMIN_EMAIL } from '../context/AuthContext';
 import { StoreConfig } from '../types';
@@ -21,17 +26,39 @@ interface ProfessionalAuthGateProps {
   storeConfig: StoreConfig;
   activeEstablishmentId: string;
   onOpenPublicMenu: () => void;
+  onOpenMarketplace?: () => void;
 }
 
 export const ProfessionalAuthGate: React.FC<ProfessionalAuthGateProps> = ({
   storeConfig,
   activeEstablishmentId,
   onOpenPublicMenu,
+  onOpenMarketplace,
 }) => {
-  const { user, loading, signIn, signOut } = useAuth();
+  const { user, loading, signIn, signInWithCredentials, signOut } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [copiedEmail, setCopiedEmail] = useState(false);
+
+  const handleCredentialsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+    setIsLoggingIn(true);
+    try {
+      await signInWithCredentials(email, password);
+    } catch (err: any) {
+      setLoginError(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível validar suas credenciais. Verifique seu e-mail e senha.'
+      );
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
 
   const handleGoogleLogin = async () => {
     setLoginError(null);
@@ -39,7 +66,9 @@ export const ProfessionalAuthGate: React.FC<ProfessionalAuthGateProps> = ({
     try {
       await signIn();
     } catch (err: any) {
-      setLoginError('Não foi possível concluir a autenticação com o Google. Verifique se os pop-ups estão permitidos.');
+      setLoginError(
+        'Não foi possível concluir a autenticação com o Google. Verifique se os pop-ups estão permitidos ou entre com seu E-mail e Senha.'
+      );
     } finally {
       setIsLoggingIn(false);
     }
@@ -58,8 +87,12 @@ export const ProfessionalAuthGate: React.FC<ProfessionalAuthGateProps> = ({
         <div className="w-12 h-12 rounded-2xl bg-orange-500/20 border border-orange-500/40 flex items-center justify-center animate-pulse mb-4">
           <ShieldCheck className="w-6 h-6 text-orange-500" />
         </div>
-        <p className="text-sm font-black tracking-wide text-white">Verificando credenciais e vínculo do estabelecimento...</p>
-        <p className="text-xs text-neutral-400 mt-1">Sincronizando permissões seguras no Cloud Firestore</p>
+        <p className="text-sm font-black tracking-wide text-white">
+          Verificando credenciais e direcionando para o seu ambiente...
+        </p>
+        <p className="text-xs text-neutral-400 mt-1">
+          Sincronizando permissões seguras no Cloud Firestore
+        </p>
       </div>
     );
   }
@@ -83,7 +116,7 @@ export const ProfessionalAuthGate: React.FC<ProfessionalAuthGateProps> = ({
               Conta Ainda Não Vinculada a um Estabelecimento
             </h1>
             <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
-              Por segurança profissional, cada login possui acesso exclusivo apenas aos dados do seu próprio restaurante. Sua conta foi autenticada, mas ainda não está vinculada a uma loja ativa.
+              Por segurança, cada login possui acesso exclusivo apenas aos dados do seu próprio restaurante. Sua conta foi autenticada, mas ainda não está vinculada a uma loja ativa.
             </p>
           </div>
 
@@ -99,7 +132,11 @@ export const ProfessionalAuthGate: React.FC<ProfessionalAuthGateProps> = ({
                 onClick={handleCopyEmail}
                 className="px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-bold text-white flex items-center gap-1.5 transition cursor-pointer shrink-0"
               >
-                {copiedEmail ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                {copiedEmail ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
                 <span>{copiedEmail ? 'Copiado!' : 'Copiar'}</span>
               </button>
             </div>
@@ -107,7 +144,7 @@ export const ProfessionalAuthGate: React.FC<ProfessionalAuthGateProps> = ({
             <div className="pt-2 border-t border-neutral-800/80 text-[11px] text-neutral-400 space-y-1">
               <p>
                 <strong>Como liberar seu acesso:</strong> Envie o e-mail acima para o administrador da plataforma (
-                <span className="text-white font-semibold">{SUPER_ADMIN_EMAIL}</span>) ou para o proprietário do seu estabelecimento para que ele vincule seu login na aba <strong>Acessos &amp; Lojas</strong>.
+                <span className="text-white font-semibold">{SUPER_ADMIN_EMAIL}</span>) ou para o gerente do seu estabelecimento para que ele vincule seu login em <strong>Acessos &amp; Equipe</strong>.
               </p>
             </div>
           </div>
@@ -118,7 +155,7 @@ export const ProfessionalAuthGate: React.FC<ProfessionalAuthGateProps> = ({
               className="flex-1 py-3 px-4 rounded-xl bg-orange-500 hover:bg-orange-400 text-neutral-950 font-black text-xs flex items-center justify-center gap-2 transition cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
-              <span>Entrar com Outra Conta Google</span>
+              <span>Trocar Conta / Voltar ao Login</span>
             </button>
             <button
               onClick={onOpenPublicMenu}
@@ -133,7 +170,7 @@ export const ProfessionalAuthGate: React.FC<ProfessionalAuthGateProps> = ({
     );
   }
 
-  // Case 2: Not signed in — Render Professional Multi-Tenant Portal Login
+  // Case 2: Not signed in — Render General Multi-Tenant Login Portal
   return (
     <div className="min-h-screen bg-neutral-950 text-white flex flex-col justify-between p-4 sm:p-6 relative overflow-hidden">
       {/* Subtle Ambient Glow */}
@@ -141,97 +178,120 @@ export const ProfessionalAuthGate: React.FC<ProfessionalAuthGateProps> = ({
       <div className="w-96 h-96 rounded-full bg-emerald-500/10 blur-3xl absolute -bottom-24 -right-24 pointer-events-none" />
 
       {/* Top Bar */}
-      <div className="max-w-5xl w-full mx-auto flex items-center justify-between py-2 relative z-10">
+      <div className="max-w-5xl w-full mx-auto flex flex-wrap items-center justify-between gap-2 py-2 relative z-10">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center text-neutral-950 font-black shadow-lg">
-            <Building2 className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center text-white font-black text-base shadow-lg">
+            D
           </div>
           <div>
             <span className="font-black text-sm tracking-tight text-white block leading-none">
-              MAX DELIVERY &amp; GESTÃO
+              DELIVY • GESTÃO &amp; DELIVERY
             </span>
             <span className="text-[10px] text-neutral-400 font-semibold">
-              Plataforma SaaS Multi-Estabelecimentos
+              Portal Geral Multi-Estabelecimentos
             </span>
           </div>
         </div>
 
-        <button
-          onClick={onOpenPublicMenu}
-          className="px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-xs font-bold text-emerald-400 flex items-center gap-1.5 transition cursor-pointer"
-        >
-          <Store className="w-3.5 h-3.5" />
-          <span>Ver Cardápio do Cliente ({storeConfig.nome})</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {onOpenMarketplace && (
+            <button
+              onClick={onOpenMarketplace}
+              className="px-3.5 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-xs font-black text-white flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+            >
+              <Store className="w-3.5 h-3.5" />
+              <span>App Delivy (Ver Restaurantes)</span>
+            </button>
+          )}
+          <button
+            onClick={onOpenPublicMenu}
+            className="px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-xs font-bold text-emerald-400 flex items-center gap-1.5 transition cursor-pointer"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Cardápio ({storeConfig.nome})</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Login Card */}
-      <div className="max-w-4xl w-full mx-auto my-8 grid grid-cols-1 lg:grid-cols-12 bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden shadow-2xl relative z-10">
-        {/* Left Column: Value Proposition & Isolation Security */}
-        <div className="lg:col-span-7 p-6 sm:p-8 bg-gradient-to-br from-neutral-900 via-neutral-900 to-neutral-950 border-b lg:border-b-0 lg:border-r border-neutral-800 flex flex-col justify-between space-y-6">
-          <div className="space-y-4">
+      <div className="max-w-5xl w-full mx-auto my-6 grid grid-cols-1 lg:grid-cols-12 bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden shadow-2xl relative z-10">
+        {/* Left Column: Automatic Role & Store Routing Explanation */}
+        <div className="lg:col-span-6 p-6 sm:p-8 bg-gradient-to-br from-neutral-900 via-neutral-900 to-neutral-950 border-b lg:border-b-0 lg:border-r border-neutral-800 flex flex-col justify-between space-y-6">
+          <div className="space-y-3">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400 text-[11px] font-black uppercase tracking-wider">
               <Lock className="w-3.5 h-3.5" />
-              <span>Ambiente Corporativo Isolado por Loja</span>
+              <span>Redirecionamento Automático por Perfil</span>
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-black text-white leading-tight">
-              Portal do Estabelecimento &amp; Gestão em Tempo Real
+              Acesso Geral à Plataforma
             </h1>
 
             <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
-              Faça login com sua conta autorizada. O sistema identifica automaticamente o seu estabelecimento vinculado e carrega apenas o seu cardápio, seus pedidos KDS e seu financeiro.
+              Entre com seu e-mail e senha/PIN ou conta Google. O sistema reconhece automaticamente o seu cargo e o estabelecimento vinculado, abrindo exatamente as ferramentas do seu perfil:
             </p>
           </div>
 
-          <div className="space-y-3">
-            <div className="p-3.5 rounded-2xl bg-neutral-950/90 border border-neutral-800/90 flex items-start gap-3">
+          <div className="space-y-2.5">
+            <div className="p-3 rounded-2xl bg-neutral-950/90 border border-neutral-800/90 flex items-start gap-3">
               <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
                 <Store className="w-4 h-4" />
               </div>
               <div className="text-xs">
-                <p className="font-black text-white">Acesso Exclusivo do Lojista (Dono / Gerente)</p>
+                <p className="font-black text-white">Gerente do Estabelecimento</p>
                 <p className="text-neutral-400 mt-0.5">
-                  Visualiza e edita somente os produtos, preços, taxas de entrega, PIX e relatórios do seu próprio restaurante.
+                  Abre o painel exclusivo da sua loja: Operação do Dia, KDS, Cardápio, Estoque, CRM e DRE.
                 </p>
               </div>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-neutral-950/90 border border-neutral-800/90 flex items-start gap-3">
-              <div className="w-8 h-8 rounded-xl bg-orange-500/15 text-orange-400 flex items-center justify-center shrink-0 mt-0.5">
+            <div className="p-3 rounded-2xl bg-neutral-950/90 border border-neutral-800/90 flex items-start gap-3">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
                 <ChefHat className="w-4 h-4" />
               </div>
               <div className="text-xs">
-                <p className="font-black text-white">Acesso Operacional (Cozinha KDS &amp; Caixa)</p>
+                <p className="font-black text-white">Cozinha (Monitor KDS)</p>
                 <p className="text-neutral-400 mt-0.5">
-                  Acesso direto à fila de produção e despacho de pedidos da loja vinculada, sem alterar configurações sensíveis.
+                  Abre direto na fila de preparo da cozinha em tempo real e impressão de comandas térmicas.
                 </p>
               </div>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-neutral-950/90 border border-neutral-800/90 flex items-start gap-3">
+            <div className="p-3 rounded-2xl bg-neutral-950/90 border border-neutral-800/90 flex items-start gap-3">
+              <div className="w-8 h-8 rounded-xl bg-cyan-500/15 text-cyan-400 flex items-center justify-center shrink-0 mt-0.5">
+                <Headset className="w-4 h-4" />
+              </div>
+              <div className="text-xs">
+                <p className="font-black text-white">Atendente / Caixa PDV</p>
+                <p className="text-neutral-400 mt-0.5">
+                  Abre a Operação do Turno, lançamento de Pedidos de Balcão/PDV e consulta rápida do cardápio.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-neutral-950/90 border border-neutral-800/90 flex items-start gap-3">
               <div className="w-8 h-8 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0 mt-0.5">
                 <Crown className="w-4 h-4" />
               </div>
               <div className="text-xs">
-                <p className="font-black text-white">Central Master SaaS (Proprietário da Plataforma)</p>
+                <p className="font-black text-white">Master da Plataforma (Super Admin)</p>
                 <p className="text-neutral-400 mt-0.5">
-                  Controle centralizado para cadastrar novos estabelecimentos clientes, vincular logins e gerenciar assinaturas.
+                  Controle global de todas as lojas, implantação de novos clientes, cores/marca e gestão de acessos.
                 </p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right Column: Sign-In Action */}
-        <div className="lg:col-span-5 p-6 sm:p-8 bg-neutral-950 flex flex-col justify-center space-y-6">
-          <div className="text-center space-y-2">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center text-white mx-auto shadow-xl shadow-orange-500/20">
-              <ShieldCheck className="w-7 h-7" />
+        {/* Right Column: Login Form (Email + Password/PIN & Google Sign-In) */}
+        <div className="lg:col-span-6 p-6 sm:p-8 bg-neutral-950 flex flex-col justify-center space-y-5">
+          <div className="text-center space-y-1.5">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center text-white mx-auto shadow-xl shadow-orange-500/20">
+              <ShieldCheck className="w-6 h-6" />
             </div>
-            <h2 className="text-lg font-black text-white">Identifique seu Acesso</h2>
+            <h2 className="text-lg sm:text-xl font-black text-white">Entrar na Plataforma</h2>
             <p className="text-xs text-neutral-400">
-              Utilize o e-mail Google cadastrado para o seu estabelecimento
+              Digite suas credenciais cadastradas ou entre com o Google
             </p>
           </div>
 
@@ -241,34 +301,116 @@ export const ProfessionalAuthGate: React.FC<ProfessionalAuthGateProps> = ({
             </div>
           )}
 
-          <div className="space-y-3">
+          {/* Email + Password/PIN Form */}
+          <form onSubmit={handleCredentialsSubmit} className="space-y-3.5">
+            <div>
+              <label className="block text-[11px] font-bold text-neutral-300 mb-1">
+                E-mail do Usuário / Login *
+              </label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="ex: gerente@loja.com ou maxuell86@gmail.com"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-white text-xs sm:text-sm outline-none focus:border-orange-500 transition"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-neutral-300 mb-1">
+                Senha ou PIN de Acesso *
+              </label>
+              <div className="relative">
+                <KeyRound className="w-4 h-4 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Digite sua senha ou PIN"
+                  className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-white text-xs sm:text-sm outline-none focus:border-orange-500 transition"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white cursor-pointer"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
             <button
-              onClick={handleGoogleLogin}
+              type="submit"
               disabled={isLoggingIn}
-              className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-neutral-950 font-black text-sm flex items-center justify-center gap-2.5 shadow-xl shadow-orange-500/20 transition active:scale-98 cursor-pointer disabled:opacity-50"
+              className="w-full py-3 px-5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-neutral-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 transition cursor-pointer disabled:opacity-50"
             >
               <LogIn className="w-4 h-4" />
-              <span>{isLoggingIn ? 'Autenticando...' : 'Entrar com Conta Google'}</span>
+              <span>{isLoggingIn ? 'Autenticando...' : 'Entrar com E-mail e Senha'}</span>
             </button>
+          </form>
 
-            <div className="p-3.5 rounded-2xl bg-neutral-900 border border-neutral-800 text-[11px] text-neutral-400 space-y-1.5">
-              <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Isolamento de Dados Ativo</span>
-              </div>
-              <p className="leading-relaxed">
-                Cada estabelecimento possui banco de produtos, fila de pedidos e link público independentes (
-                <code className="text-orange-300">/?modo=cardapio&amp;loja={activeEstablishmentId}</code>).
-              </p>
-            </div>
+          {/* Divider */}
+          <div className="relative flex items-center py-1">
+            <div className="flex-grow border-t border-neutral-800" />
+            <span className="flex-shrink mx-3 text-[11px] font-bold text-neutral-500 uppercase">
+              ou acesse com o Google
+            </span>
+            <div className="flex-grow border-t border-neutral-800" />
           </div>
 
-          <div className="pt-4 border-t border-neutral-900 text-center">
+          {/* Google Login Button */}
+          <button
+            type="button"
+            onClick={handleGoogleLogin}
+            disabled={isLoggingIn}
+            className="w-full py-3 px-5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2.5 transition cursor-pointer disabled:opacity-50"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24">
+              <path
+                fill="#EA4335"
+                d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"
+              />
+              <path
+                fill="#4285F4"
+                d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.9C3.5 21.4 7.4 24 12 24z"
+              />
+            </svg>
+            <span>Entrar com Conta Google</span>
+          </button>
+
+          <div className="p-3 rounded-2xl bg-neutral-900/70 border border-neutral-800/80 text-[11px] text-neutral-400 space-y-1">
+            <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Isolamento Multi-Loja Garantido</span>
+            </div>
+            <p className="leading-relaxed">
+              Master Admin: <code className="text-orange-300">{SUPER_ADMIN_EMAIL}</code> (senha padrão inicial:{' '}
+              <code className="text-emerald-300">admin123</code> ou via Google). Gerentes e equipe entram com o e-mail e senha criados em <strong>Acessos &amp; Equipe</strong>.
+            </p>
+          </div>
+
+          <div className="pt-2 border-t border-neutral-900 text-center">
             <button
+              type="button"
               onClick={onOpenPublicMenu}
               className="text-xs font-bold text-neutral-400 hover:text-white transition cursor-pointer"
             >
-              É cliente final? <span className="text-emerald-400 underline">Clique aqui para abrir o Cardápio Digital</span>
+              É cliente fazendo pedido?{' '}
+              <span className="text-emerald-400 underline">Abrir Cardápio Digital ({storeConfig.nome})</span>
             </button>
           </div>
         </div>
@@ -276,7 +418,7 @@ export const ProfessionalAuthGate: React.FC<ProfessionalAuthGateProps> = ({
 
       {/* Footer */}
       <div className="max-w-5xl w-full mx-auto text-center text-[11px] text-neutral-500 py-2 relative z-10">
-        Segurança e Isolamento Multi-Estabelecimento via Google Firebase Authentication &amp; Cloud Firestore
+        Tecnologia por <strong className="text-orange-500">Delivy</strong> • Plataforma SaaS Multi-Estabelecimentos via Google Firebase &amp; Cloud Firestore
       </div>
     </div>
   );

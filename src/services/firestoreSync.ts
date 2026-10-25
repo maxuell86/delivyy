@@ -567,4 +567,63 @@ export async function deductStockForOrder(
   return updatedList;
 }
 
+// 5. COMPLETE STORE DELETION (FOR SUPER ADMIN SAAS CONTROL)
+export async function deleteStoreCompletelyFromFirestore(storeId: string): Promise<void> {
+  const targetStoreId = sanitizeStoreId(storeId);
+  try {
+    // 1. Delete store_config document
+    await deleteDoc(doc(db, STORE_CONFIG_DOC, targetStoreId));
+
+    // 2. Delete all products belonging to this store
+    const productsSnap = await getDocs(collection(db, PRODUCTS_COLLECTION));
+    const batch = writeBatch(db);
+    let count = 0;
+
+    productsSnap.forEach((docSnap) => {
+      const data = docSnap.data();
+      const docStore = sanitizeStoreId(data.storeId || 'default');
+      if (docStore === targetStoreId) {
+        batch.delete(docSnap.ref);
+        count++;
+      }
+    });
+
+    // 3. Delete all orders belonging to this store
+    const ordersSnap = await getDocs(collection(db, ORDERS_COLLECTION));
+    ordersSnap.forEach((docSnap) => {
+      const data = docSnap.data();
+      const docStore = sanitizeStoreId(data.storeId || 'default');
+      if (docStore === targetStoreId) {
+        batch.delete(docSnap.ref);
+        count++;
+      }
+    });
+
+    // 4. Delete all admin bindings for this store
+    const adminsSnap = await getDocs(collection(db, 'admins'));
+    adminsSnap.forEach((docSnap) => {
+      const data = docSnap.data();
+      const docStore = sanitizeStoreId(data.storeId || 'default');
+      if (docStore === targetStoreId && data.role !== 'platform_admin') {
+        batch.delete(docSnap.ref);
+        count++;
+      }
+    });
+
+    if (count > 0) {
+      await batch.commit();
+    }
+
+    // Clear local storage keys for this store
+    try {
+      localStorage.removeItem(`omni_delivery_config_${targetStoreId}`);
+      localStorage.removeItem(`omni_delivery_products_${targetStoreId}`);
+      localStorage.removeItem(`omni_inventory_stock_${targetStoreId}`);
+    } catch {}
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `${STORE_CONFIG_DOC}/${targetStoreId}`);
+  }
+}
+
+
 

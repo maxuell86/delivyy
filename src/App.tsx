@@ -31,6 +31,9 @@ import { AdminTeamModal } from './components/AdminTeamModal';
 import { PublicStorefrontView } from './components/PublicStorefrontView';
 import { StoreManagerOperationView } from './components/StoreManagerOperationView';
 import { ExclusiveMenuLinkModal, buildExclusiveMenuUrl, sanitizeMenuSlug } from './components/ExclusiveMenuLinkModal';
+import { ProfessionalAuthGate } from './components/ProfessionalAuthGate';
+import { SaasBillingView } from './components/SaasBillingView';
+import { DelivyMarketplaceView } from './components/DelivyMarketplaceView';
 
 const CustomerSimulator = React.lazy(() =>
   import('./components/CustomerSimulator').then((m) => ({ default: m.CustomerSimulator }))
@@ -66,12 +69,13 @@ import {
   deleteProductFromFirestore,
   syncProductsBatchToFirestore,
   clearAllOrdersInFirestore,
+  deleteStoreCompletelyFromFirestore,
   sanitizeStoreId,
 } from './services/firestoreSync';
 
 export default function App() {
   const { isDark } = useTheme();
-  const { user, isAdmin, isSuperAdmin, userRole, assignedStoreId } = useAuth();
+  const { user, isAdmin, isSuperAdmin, userRole, assignedStoreId, signOut } = useAuth();
   const hasSeededConfigRef = useRef(false);
   const hasSeededProductsRef = useRef(false);
 
@@ -86,12 +90,36 @@ export default function App() {
 
   // Perspective: Platform Manager ('platform_admin') vs Store Manager ('store_manager')
   const [viewPerspective, setViewPerspective] = useState<ViewPerspective>('platform_admin');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('omni_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
-  // Open public customer storefront automatically when URL has ?modo=cardapio, ?modo=cliente, or ?loja=... (unless modo=kds or modo=admin)
+  const handleToggleSidebarCollapse = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('omni_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Open public customer storefront automatically when URL has ?modo=cardapio, ?modo=cliente, or ?loja=... (unless modo=kds or modo=admin or modo=marketplace)
+  const [isMarketplaceMode, setIsMarketplaceMode] = useState<boolean>(
+    initialModo === 'marketplace' || initialModo === 'delivy'
+  );
   const [isPublicStorefront, setIsPublicStorefront] = useState<boolean>(
     initialModo === 'cardapio' ||
       initialModo === 'cliente' ||
-      (Boolean(rawLojaUrlParam) && initialModo !== 'kds' && initialModo !== 'admin')
+      (Boolean(rawLojaUrlParam) &&
+        initialModo !== 'kds' &&
+        initialModo !== 'admin' &&
+        initialModo !== 'marketplace' &&
+        initialModo !== 'delivy')
   );
   const [openedFromAdmin, setOpenedFromAdmin] = useState<boolean>(false);
 
@@ -105,19 +133,31 @@ export default function App() {
       ? assignedStoreId
       : selectedStoreId;
 
-  // Automatically adjust perspective and default tab when a bound Store Manager or Kitchen user logs in
+  // Automatically adjust perspective and default tab when a user logs in according to their role
   useEffect(() => {
     if (isPublicStorefront && !openedFromAdmin) return;
-    if (user && !isSuperAdmin && assignedStoreId) {
+    if (!user) return;
+
+    if (isSuperAdmin) {
+      setViewPerspective('platform_admin');
+      return;
+    }
+
+    if (assignedStoreId) {
       setSelectedStoreId(assignedStoreId);
-      setViewPerspective('store_manager');
-      if (userRole === 'kitchen') {
-        setActiveTab('pedidos');
-      } else {
-        setActiveTab((prev) =>
-          ['customizacao', 'simulador', 'producao', 'diagnostico'].includes(prev) ? 'operacao' : prev
-        );
-      }
+    }
+    setViewPerspective('store_manager');
+
+    if (userRole === 'kitchen') {
+      setActiveTab('pedidos');
+    } else if (userRole === 'attendant') {
+      setActiveTab((prev) =>
+        ['operacao', 'pedidos', 'cardapio'].includes(prev) ? prev : 'operacao'
+      );
+    } else {
+      setActiveTab((prev) =>
+        ['customizacao', 'simulador', 'producao', 'diagnostico'].includes(prev) ? 'operacao' : prev
+      );
     }
   }, [user, isSuperAdmin, assignedStoreId, userRole, isPublicStorefront, openedFromAdmin]);
 
@@ -576,7 +616,27 @@ export default function App() {
     ? 'bg-neutral-950 border-neutral-800 text-white' 
     : 'bg-neutral-100 border-neutral-200 text-neutral-900';
 
-  // If running in Public Customer Storefront mode (?modo=cardapio), render clean customer digital menu
+  // 1. If running in Delivy Marketplace App mode (?modo=marketplace), render iFood-style hub
+  if (isMarketplaceMode) {
+    const storesForMarketplace =
+      allStores.length > 0 ? allStores : [{ ...storeConfig, id: activeStoreId }];
+    return (
+      <DelivyMarketplaceView
+        stores={storesForMarketplace}
+        onSelectStoreToOrder={(targetStoreId) => {
+          setSelectedStoreId(targetStoreId);
+          setIsMarketplaceMode(false);
+          setIsPublicStorefront(true);
+        }}
+        onOpenAdminLogin={() => {
+          setIsMarketplaceMode(false);
+          setIsPublicStorefront(false);
+        }}
+      />
+    );
+  }
+
+  // 2. If running in Public Customer Storefront mode (?modo=cardapio), render clean customer digital menu
   if (isPublicStorefront) {
     return (
       <PublicStorefrontView
@@ -584,6 +644,10 @@ export default function App() {
         storeConfig={storeConfig}
         onSaveConfig={saveStoreConfig}
         showAdminReturnBar={openedFromAdmin || isAdmin}
+        onOpenMarketplace={() => {
+          setIsPublicStorefront(false);
+          setIsMarketplaceMode(true);
+        }}
         onExitPublicMode={() => {
           setIsPublicStorefront(false);
           if (typeof window !== 'undefined' && window.location.search) {
@@ -594,23 +658,88 @@ export default function App() {
     );
   }
 
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('omni_sidebar_collapsed') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  // 3. Require authentication through the General Login Screen before opening the platform
+  if (!user || (!isAdmin && !isSuperAdmin)) {
+    return (
+      <ProfessionalAuthGate
+        storeConfig={storeConfig}
+        activeEstablishmentId={activeStoreId}
+        onOpenPublicMenu={() => {
+          setOpenedFromAdmin(false);
+          setIsPublicStorefront(true);
+        }}
+        onOpenMarketplace={() => {
+          setIsMarketplaceMode(true);
+        }}
+      />
+    );
+  }
 
-  const handleToggleSidebarCollapse = () => {
-    setIsSidebarCollapsed((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('omni_sidebar_collapsed', String(next));
-      } catch {}
-      return next;
-    });
-  };
+  // 4. If establishment is blocked/suspended by Super Admin for non-payment, lock panel for non-SuperAdmin users
+  if (!isSuperAdmin && storeConfig.statusLicenca === 'suspenso') {
+    const feeVal = (Number(storeConfig.valorMensalidade) || 149.9).toFixed(2).replace('.', ',');
+    return (
+      <div className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-4 sm:p-6">
+        <div className="w-full max-w-lg bg-neutral-900 border border-red-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 text-center">
+          <div className="w-16 h-16 rounded-3xl bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 mx-auto">
+            <Lock className="w-8 h-8" />
+          </div>
+
+          <div className="space-y-2">
+            <span className="px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-red-500/20 text-red-300 border border-red-500/30">
+              Acesso Suspenso Temporariamente • Delivy
+            </span>
+            <h1 className="text-xl sm:text-2xl font-black text-white pt-1">
+              Mensalidade de Uso Pendente ({storeConfig.nome})
+            </h1>
+            <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
+              {storeConfig.motivoBloqueio ||
+                'Identificamos uma pendência na mensalidade de uso da plataforma Delivy para este estabelecimento. O acesso ao painel e ao cardápio digital foi temporariamente bloqueado.'}
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800 text-xs space-y-1.5 text-left">
+            <p className="text-neutral-300">
+              <strong>Estabelecimento:</strong> {storeConfig.nome}
+            </p>
+            <p className="text-neutral-300">
+              <strong>Valor da Mensalidade:</strong>{' '}
+              <span className="text-emerald-400 font-black">R$ {feeVal}</span> (Vencimento dia{' '}
+              {storeConfig.diaVencimento || 10})
+            </p>
+            <p className="text-neutral-400 pt-1">
+              Entre em contato com o suporte financeiro da <strong>Delivy</strong> para enviar o comprovante e liberar seu acesso imediatamente.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <a
+              href={`https://wa.me/5565996953036?text=${encodeURIComponent(
+                `Olá! Preciso regularizar a mensalidade da plataforma Delivy para liberar o acesso do estabelecimento "${storeConfig.nome}".`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-2 transition"
+            >
+              <span>Falar com Financeiro Delivy (WhatsApp)</span>
+            </a>
+
+            <button
+              type="button"
+              onClick={signOut}
+              className="py-3 px-4 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs cursor-pointer"
+            >
+              Sair da Conta
+            </button>
+          </div>
+
+          <p className="text-[11px] text-neutral-500">
+            Tecnologia por <strong className="text-orange-500">Delivy</strong>
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-screen ${isDark ? 'bg-neutral-950 text-neutral-100' : 'bg-neutral-50 text-neutral-900'} flex flex-col font-sans transition-colors duration-200 selection:bg-orange-500 selection:text-white`}>
@@ -639,6 +768,7 @@ export default function App() {
         onOpenKitchenReceipt={() => setIsKitchenReceiptOpen(true)}
         onOpenOnboarding={() => setIsOnboardingOpen(true)}
         onOpenTeamModal={() => setIsTeamModalOpen(true)}
+        onOpenMarketplace={() => setIsMarketplaceMode(true)}
         activeStoreId={activeStoreId}
         allStores={allStores}
         onSelectStore={(newStoreId) => {
@@ -673,6 +803,33 @@ export default function App() {
       >
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Aviso de mensalidade em atraso para o gerente do estabelecimento */}
+        {!isSuperAdmin && storeConfig.statusLicenca === 'atrasado' && (
+          <div className="mb-6 p-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
+              <div>
+                <p className="font-black text-sm text-amber-400">
+                  Aviso Financeiro Delivy: Mensalidade de Uso em Atraso
+                </p>
+                <p className="text-neutral-300">
+                  Regularize sua assinatura (R${' '}
+                  {(Number(storeConfig.valorMensalidade) || 149.9).toFixed(2).replace('.', ',')}) para evitar a suspensão automática do painel e do cardápio digital.
+                </p>
+              </div>
+            </div>
+            <a
+              href={`https://wa.me/5565996953036?text=${encodeURIComponent(
+                `Olá! Quero enviar o comprovante da mensalidade Delivy do estabelecimento "${storeConfig.nome}".`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-black whitespace-nowrap"
+            >
+              Regularizar via WhatsApp
+            </a>
+          </div>
+        )}
         {/* Alerta caso o usuário tenha feito login com um e-mail que ainda não foi vinculado a nenhum estabelecimento */}
         {user && !isSuperAdmin && !isAdmin && (
           <div className="mb-6 p-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs">
@@ -1231,10 +1388,39 @@ export default function App() {
               onOpenSegmentModal={() => setIsSegmentModalOpen(true)}
             />
           )}
+
+          {/* CENTRAL DE MENSALIDADES, BLOQUEIO POR INADIMPLÊNCIA E EXCLUSÃO (SUPER ADMIN SAAS) */}
+          {activeTab === 'assinaturas' && isSuperAdmin && (
+            <SaasBillingView
+              stores={allStores.length > 0 ? allStores : [{ ...storeConfig, id: activeStoreId }]}
+              activeStoreId={activeStoreId}
+              onUpdateStoreConfig={async (updatedCfg, targetId) => {
+                saveStoreConfig(updatedCfg, targetId);
+                setAllStores((prev) => {
+                  const exists = prev.some((s) => (s.id || 'default') === targetId);
+                  if (!exists) return [...prev, updatedCfg];
+                  return prev.map((s) => ((s.id || 'default') === targetId ? updatedCfg : s));
+                });
+              }}
+              onDeleteStore={async (targetId, storeName) => {
+                await deleteStoreCompletelyFromFirestore(targetId);
+                setAllStores((prev) => prev.filter((s) => (s.id || 'default') !== targetId));
+                if (activeStoreId === targetId) {
+                  const remaining = allStores.filter((s) => (s.id || 'default') !== targetId);
+                  setSelectedStoreId(remaining[0]?.id || 'default');
+                }
+                showToast(`Estabelecimento "${storeName}" e todos os seus dados foram excluídos!`);
+              }}
+              onSelectStore={(targetId) => setSelectedStoreId(targetId)}
+              onOpenOnboarding={() => setIsOnboardingOpen(true)}
+              onOpenMarketplace={() => setIsMarketplaceMode(true)}
+              showToast={showToast}
+            />
+          )}
         </Suspense>
       </main>
 
-      {/* FOOTER */}
+      {/* FOOTER COM MARCA DELIVY */}
       <footer className={`border-t py-6 text-center text-xs transition-colors ${
         isDark ? 'border-neutral-800/80 bg-neutral-900/60 text-neutral-400' : 'border-neutral-200 bg-white text-neutral-600 shadow-xs'
       }`}>
@@ -1245,8 +1431,21 @@ export default function App() {
             <span>• Nicho: {currentSegmentConfig.nome}</span>
           </div>
 
-          <div className="text-neutral-400">
-            Plataforma White-Label de Delivery &amp; Gestão de Cardápio para Múltiplos Estabelecimentos
+          <div className="flex flex-wrap items-center justify-center gap-2 text-neutral-400">
+            <span className="w-5 h-5 rounded-md bg-gradient-to-br from-orange-500 to-red-600 text-white font-black inline-flex items-center justify-center text-[10px]">
+              D
+            </span>
+            <span>
+              Tecnologia por <strong className="text-orange-500">Delivy</strong> • Plataforma Multi-Estabelecimentos de Delivery &amp; Gestão
+            </span>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => setIsMarketplaceMode(true)}
+              className="text-emerald-500 hover:underline font-bold cursor-pointer"
+            >
+              Abrir App Delivy
+            </button>
           </div>
         </div>
       </footer>
@@ -1366,6 +1565,7 @@ export default function App() {
                   uid: memberId,
                   email: emailLower,
                   nome: newConfig.gerenteNome || emailLower.split('@')[0],
+                  senha: newConfig.gerenteSenha || '123456',
                   role: 'store_manager',
                   storeId: targetStoreId,
                   storeName: newConfig.nome,

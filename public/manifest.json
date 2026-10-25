@@ -1,0 +1,24 @@
+{
+  "name": "Delivy — Restaurantes & Delivery",
+  "short_name": "Delivy",
+  "description": "Peça nos melhores restaurantes da sua cidade ou gerencie seu estabelecimento com o Delivy.",
+  "start_url": "/?modo=marketplace",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#f97316",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3075/3075977.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3075/3075977.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

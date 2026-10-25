@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   Store,
-  AlertCircle,
   PlusCircle,
   Smartphone,
   Download,
@@ -20,6 +19,7 @@ import {
   Users,
   ShieldCheck,
   LogIn,
+  LogOut,
   Building2,
   Crown,
   LayoutDashboard,
@@ -51,7 +51,8 @@ export type AppTab =
   | 'produtos'
   | 'fidelidade'
   | 'relatorios'
-  | 'checklist';
+  | 'checklist'
+  | 'assinaturas';
 
 interface HeaderProps {
   storeConfig: StoreConfig;
@@ -68,6 +69,7 @@ interface HeaderProps {
   onOpenKitchenReceipt: () => void;
   onOpenOnboarding: () => void;
   onOpenTeamModal: () => void;
+  onOpenMarketplace?: () => void;
   // Multi-Tenant & Role Perspective props
   activeStoreId?: string;
   allStores?: StoreConfig[];
@@ -95,6 +97,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenKitchenReceipt,
   onOpenOnboarding,
   onOpenTeamModal,
+  onOpenMarketplace,
   activeStoreId = 'default',
   allStores = [],
   onSelectStore,
@@ -105,7 +108,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleSidebarCollapse,
 }) => {
   const { toggleAdminTheme, isDark } = useTheme();
-  const { user, isSuperAdmin, assignedStoreId, signIn } = useAuth();
+  const { user, isSuperAdmin, userRole, signIn, signOut } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const totalProdutos = products.length;
@@ -138,6 +141,19 @@ export const Header: React.FC<HeaderProps> = ({
   const preparoPedidosCount = liveOrders.filter((o) => o.status === 'preparo').length;
 
   const isPlatformView = isSuperAdmin && viewPerspective === 'platform_admin';
+  const isKitchenOnly = !isSuperAdmin && userRole === 'kitchen';
+  const isAttendantOnly = !isSuperAdmin && userRole === 'attendant';
+  const isManagerOrSuper = isSuperAdmin || userRole === 'store_manager' || userRole === 'admin';
+
+  const roleBadgeLabel = isSuperAdmin
+    ? isPlatformView
+      ? 'MASTER PLATAFORMA'
+      : 'VISÃO GERENTE'
+    : userRole === 'kitchen'
+    ? 'COZINHA KDS'
+    : userRole === 'attendant'
+    ? 'ATENDENTE / PDV'
+    : 'GERENTE LOJA';
 
   // Ensure current store is in dropdown options
   const storesOptions = React.useMemo(() => {
@@ -261,10 +277,13 @@ export const Header: React.FC<HeaderProps> = ({
                   )}
                 </>
               ) : (
-                <div className="flex items-center gap-2 text-xs">
-                  <Lock className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                  <span className="font-bold text-emerald-500 truncate">
-                    {storeConfig.nome} ({storeConfig.cidade})
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Lock className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                    <span className="font-bold text-emerald-500 truncate">{storeConfig.nome}</span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded bg-orange-500/15 text-orange-400 text-[10px] font-black shrink-0">
+                    {roleBadgeLabel}
                   </span>
                 </div>
               )}
@@ -276,22 +295,24 @@ export const Header: React.FC<HeaderProps> = ({
             <div className={sectionTitleClass}>Operação em Tempo Real</div>
           )}
 
-          <button
-            onClick={() => handleSelectTab('operacao')}
-            className={`${itemBase} ${getTabClass(activeTab === 'operacao')}`}
-            title="Operação do Dia (Resumo do Turno, Fila Rápida e Caixa)"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <LayoutDashboard
-                className={`w-4 h-4 shrink-0 ${
-                  activeTab === 'operacao' ? 'text-white' : 'text-orange-400'
-                }`}
-              />
-              {(!collapsed || isMobileDrawer) && (
-                <span className="truncate">Operação do Dia</span>
-              )}
-            </div>
-          </button>
+          {!isKitchenOnly && (
+            <button
+              onClick={() => handleSelectTab('operacao')}
+              className={`${itemBase} ${getTabClass(activeTab === 'operacao')}`}
+              title="Operação do Dia (Resumo do Turno, Fila Rápida e Caixa)"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <LayoutDashboard
+                  className={`w-4 h-4 shrink-0 ${
+                    activeTab === 'operacao' ? 'text-white' : 'text-orange-400'
+                  }`}
+                />
+                {(!collapsed || isMobileDrawer) && (
+                  <span className="truncate">Operação do Dia</span>
+                )}
+              </div>
+            </button>
+          )}
 
           <button
             onClick={() => handleSelectTab('pedidos')}
@@ -331,125 +352,171 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </button>
 
-          {/* SECTION 2: CATÁLOGO & ESTOQUE */}
-          {(!collapsed || isMobileDrawer) && (
-            <div className={sectionTitleClass}>Catálogo &amp; Estoque</div>
-          )}
-
-          <button
-            onClick={() => handleSelectTab('cardapio')}
-            className={`${itemBase} ${getTabClass(
-              activeTab === 'cardapio' || activeTab === 'produtos'
-            )}`}
-            title={`Cardápio Digital (${totalProdutos} itens)`}
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <Store
-                className={`w-4 h-4 shrink-0 ${
-                  activeTab === 'cardapio' || activeTab === 'produtos'
-                    ? 'text-white'
-                    : 'text-orange-500'
-                }`}
-              />
+          {/* SECTION 2: CATÁLOGO & ESTOQUE (Not shown for Kitchen-only) */}
+          {!isKitchenOnly && (
+            <>
               {(!collapsed || isMobileDrawer) && (
-                <span className="truncate">Cardápio ({totalProdutos})</span>
+                <div className={sectionTitleClass}>Catálogo &amp; Estoque</div>
               )}
-            </div>
-            {(!collapsed || isMobileDrawer) && esgotados > 0 && (
-              <span
-                className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${
+
+              <button
+                onClick={() => handleSelectTab('cardapio')}
+                className={`${itemBase} ${getTabClass(
                   activeTab === 'cardapio' || activeTab === 'produtos'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-red-500/15 text-red-400'
-                }`}
+                )}`}
+                title={`Cardápio Digital (${totalProdutos} itens)`}
               >
-                {esgotados} pausados
-              </span>
-            )}
-          </button>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Store
+                    className={`w-4 h-4 shrink-0 ${
+                      activeTab === 'cardapio' || activeTab === 'produtos'
+                        ? 'text-white'
+                        : 'text-orange-500'
+                    }`}
+                  />
+                  {(!collapsed || isMobileDrawer) && (
+                    <span className="truncate">Cardápio ({totalProdutos})</span>
+                  )}
+                </div>
+                {(!collapsed || isMobileDrawer) && esgotados > 0 && (
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${
+                      activeTab === 'cardapio' || activeTab === 'produtos'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-red-500/15 text-red-400'
+                    }`}
+                  >
+                    {esgotados} pausados
+                  </span>
+                )}
+              </button>
 
-          <button
-            onClick={() => handleSelectTab('estoque')}
-            className={`${itemBase} ${getTabClass(activeTab === 'estoque')}`}
-            title="Controle de Estoque, Insumos & CMV"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <Boxes
-                className={`w-4 h-4 shrink-0 ${
-                  activeTab === 'estoque' ? 'text-white' : 'text-cyan-500'
-                }`}
-              />
-              {(!collapsed || isMobileDrawer) && (
-                <span className="truncate">Estoque &amp; CMV</span>
+              {isManagerOrSuper && (
+                <button
+                  onClick={() => handleSelectTab('estoque')}
+                  className={`${itemBase} ${getTabClass(activeTab === 'estoque')}`}
+                  title="Controle de Estoque, Insumos & CMV"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Boxes
+                      className={`w-4 h-4 shrink-0 ${
+                        activeTab === 'estoque' ? 'text-white' : 'text-cyan-500'
+                      }`}
+                    />
+                    {(!collapsed || isMobileDrawer) && (
+                      <span className="truncate">Estoque &amp; CMV</span>
+                    )}
+                  </div>
+                </button>
               )}
-            </div>
-          </button>
-
-          {/* SECTION 3: GESTÃO & CRESCIMENTO */}
-          {(!collapsed || isMobileDrawer) && (
-            <div className={sectionTitleClass}>Gestão &amp; Resultados</div>
+            </>
           )}
 
-          <button
-            onClick={() => handleSelectTab('fidelidade')}
-            className={`${itemBase} ${getTabClass(activeTab === 'fidelidade')}`}
-            title="CRM, Programa de Fidelidade & Cupons de Desconto"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <Tag
-                className={`w-4 h-4 shrink-0 ${
-                  activeTab === 'fidelidade' ? 'text-white' : 'text-amber-500'
-                }`}
-              />
+          {/* SECTION 3: GESTÃO & RESULTADOS (Manager & SuperAdmin only) */}
+          {isManagerOrSuper && (
+            <>
               {(!collapsed || isMobileDrawer) && (
-                <span className="truncate">CRM &amp; Fidelidade</span>
+                <div className={sectionTitleClass}>Gestão &amp; Resultados</div>
               )}
-            </div>
-          </button>
 
-          <button
-            onClick={() => handleSelectTab('financeiro')}
-            className={`${itemBase} ${getTabClass(
-              activeTab === 'financeiro' || activeTab === 'relatorios'
-            )}`}
-            title="DRE Gerencial, Curva ABC & Relatórios Financeiros"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <BarChart3
-                className={`w-4 h-4 shrink-0 ${
+              <button
+                onClick={() => handleSelectTab('fidelidade')}
+                className={`${itemBase} ${getTabClass(activeTab === 'fidelidade')}`}
+                title="CRM, Programa de Fidelidade & Cupons de Desconto"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Tag
+                    className={`w-4 h-4 shrink-0 ${
+                      activeTab === 'fidelidade' ? 'text-white' : 'text-amber-500'
+                    }`}
+                  />
+                  {(!collapsed || isMobileDrawer) && (
+                    <span className="truncate">CRM &amp; Fidelidade</span>
+                  )}
+                </div>
+              </button>
+
+              <button
+                onClick={() => handleSelectTab('financeiro')}
+                className={`${itemBase} ${getTabClass(
                   activeTab === 'financeiro' || activeTab === 'relatorios'
-                    ? 'text-white'
-                    : 'text-emerald-500'
-                }`}
-              />
-              {(!collapsed || isMobileDrawer) && (
-                <span className="truncate">DRE &amp; Relatórios</span>
-              )}
-            </div>
-          </button>
+                )}`}
+                title="DRE Gerencial, Curva ABC & Relatórios Financeiros"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <BarChart3
+                    className={`w-4 h-4 shrink-0 ${
+                      activeTab === 'financeiro' || activeTab === 'relatorios'
+                        ? 'text-white'
+                        : 'text-emerald-500'
+                    }`}
+                  />
+                  {(!collapsed || isMobileDrawer) && (
+                    <span className="truncate">DRE &amp; Relatórios</span>
+                  )}
+                </div>
+              </button>
 
-          <button
-            onClick={() => handleSelectTab('loja')}
-            className={`${itemBase} ${getTabClass(activeTab === 'loja')}`}
-            title="Taxas de Entrega por Bairro, Horários e Dados da Loja"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <Building2
-                className={`w-4 h-4 shrink-0 ${
-                  activeTab === 'loja' ? 'text-white' : 'text-orange-500'
-                }`}
-              />
-              {(!collapsed || isMobileDrawer) && (
-                <span className="truncate">Frete &amp; Horários</span>
-              )}
-            </div>
-          </button>
+              <button
+                onClick={() => handleSelectTab('loja')}
+                className={`${itemBase} ${getTabClass(activeTab === 'loja')}`}
+                title="Taxas de Entrega por Bairro, Horários e Dados da Loja"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Building2
+                    className={`w-4 h-4 shrink-0 ${
+                      activeTab === 'loja' ? 'text-white' : 'text-orange-500'
+                    }`}
+                  />
+                  {(!collapsed || isMobileDrawer) && (
+                    <span className="truncate">Frete &amp; Horários</span>
+                  )}
+                </div>
+              </button>
+            </>
+          )}
 
           {/* SECTION 4: PLATAFORMA & CUSTOMIZAÇÃO (SuperAdmin / Platform View) */}
           {isPlatformView && (
             <>
               {(!collapsed || isMobileDrawer) && (
-                <div className={sectionTitleClass}>Plataforma &amp; Implantação</div>
+                <div className={sectionTitleClass}>Plataforma Delivy (SaaS)</div>
+              )}
+
+              <button
+                onClick={() => handleSelectTab('assinaturas')}
+                className={`${itemBase} ${getTabClass(activeTab === 'assinaturas')}`}
+                title="Controle de Mensalidades, Bloqueio por Falta de Pagamento e Exclusão de Lojas"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Crown
+                    className={`w-4 h-4 shrink-0 ${
+                      activeTab === 'assinaturas' ? 'text-white' : 'text-amber-400'
+                    }`}
+                  />
+                  {(!collapsed || isMobileDrawer) && (
+                    <span className="truncate">Mensalidades &amp; Bloqueio</span>
+                  )}
+                </div>
+              </button>
+
+              {onOpenMarketplace && (
+                <button
+                  onClick={() => handleTriggerAction(onOpenMarketplace)}
+                  className={`${itemBase} ${
+                    isDark
+                      ? 'text-emerald-400 hover:text-white hover:bg-emerald-500/15'
+                      : 'text-emerald-700 hover:bg-emerald-50'
+                  }`}
+                  title="Abrir o Aplicativo Marketplace Delivy (Visão Estilo iFood com todas as lojas)"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Smartphone className="w-4 h-4 shrink-0 text-emerald-500" />
+                    {(!collapsed || isMobileDrawer) && (
+                      <span className="truncate">App Marketplace Delivy</span>
+                    )}
+                  </div>
+                </button>
               )}
 
               <button
@@ -527,31 +594,33 @@ export const Header: React.FC<HeaderProps> = ({
             <div className={sectionTitleClass}>Ferramentas Rápidas</div>
           )}
 
-          <button
-            onClick={() => handleTriggerAction(onOpenChecklist)}
-            className={`${itemBase} ${
-              isDark
-                ? 'text-neutral-300 hover:text-white hover:bg-neutral-800/80'
-                : 'text-neutral-700 hover:text-neutral-950 hover:bg-neutral-100'
-            }`}
-            title="Checklist Diário de Abertura do Turno"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <ClipboardCheck
-                className={`w-4 h-4 shrink-0 ${
-                  storeConfig.cardapioConfirmadoHoje ? 'text-emerald-500' : 'text-amber-500'
-                }`}
-              />
-              {(!collapsed || isMobileDrawer) && (
-                <span className="truncate">
-                  {storeConfig.cardapioConfirmadoHoje ? 'Turno Confirmado' : 'Checklist Abertura'}
-                </span>
+          {!isKitchenOnly && (
+            <button
+              onClick={() => handleTriggerAction(onOpenChecklist)}
+              className={`${itemBase} ${
+                isDark
+                  ? 'text-neutral-300 hover:text-white hover:bg-neutral-800/80'
+                  : 'text-neutral-700 hover:text-neutral-950 hover:bg-neutral-100'
+              }`}
+              title="Checklist Diário de Abertura do Turno"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <ClipboardCheck
+                  className={`w-4 h-4 shrink-0 ${
+                    storeConfig.cardapioConfirmadoHoje ? 'text-emerald-500' : 'text-amber-500'
+                  }`}
+                />
+                {(!collapsed || isMobileDrawer) && (
+                  <span className="truncate">
+                    {storeConfig.cardapioConfirmadoHoje ? 'Turno Confirmado' : 'Checklist Abertura'}
+                  </span>
+                )}
+              </div>
+              {(!collapsed || isMobileDrawer) && !storeConfig.cardapioConfirmadoHoje && (
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
               )}
-            </div>
-            {(!collapsed || isMobileDrawer) && !storeConfig.cardapioConfirmadoHoje && (
-              <span className="w-2 h-2 rounded-full bg-amber-500" />
-            )}
-          </button>
+            </button>
+          )}
 
           <button
             onClick={() => handleTriggerAction(onOpenKitchenReceipt)}
@@ -570,22 +639,43 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </button>
 
-          <button
-            onClick={() => handleTriggerAction(onOpenPaymentModal)}
-            className={`${itemBase} ${
-              isDark
-                ? 'text-neutral-300 hover:text-white hover:bg-neutral-800/80'
-                : 'text-neutral-700 hover:text-neutral-950 hover:bg-neutral-100'
-            }`}
-            title="Configurar Chave Pix, Maquininhas e Vales"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <CreditCard className="w-4 h-4 shrink-0 text-emerald-500" />
-              {(!collapsed || isMobileDrawer) && (
-                <span className="truncate">Pix &amp; Pagamentos</span>
-              )}
-            </div>
-          </button>
+          {isManagerOrSuper && (
+            <>
+              <button
+                onClick={() => handleTriggerAction(onOpenPaymentModal)}
+                className={`${itemBase} ${
+                  isDark
+                    ? 'text-neutral-300 hover:text-white hover:bg-neutral-800/80'
+                    : 'text-neutral-700 hover:text-neutral-950 hover:bg-neutral-100'
+                }`}
+                title="Configurar Chave Pix, Maquininhas e Vales"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <CreditCard className="w-4 h-4 shrink-0 text-emerald-500" />
+                  {(!collapsed || isMobileDrawer) && (
+                    <span className="truncate">Pix &amp; Pagamentos</span>
+                  )}
+                </div>
+              </button>
+
+              <button
+                onClick={() => handleTriggerAction(onOpenTeamModal)}
+                className={`${itemBase} ${
+                  isDark
+                    ? 'text-neutral-300 hover:text-white hover:bg-neutral-800/80'
+                    : 'text-neutral-700 hover:text-neutral-950 hover:bg-neutral-100'
+                }`}
+                title="Gerenciar Acessos, Senhas e Equipe da Loja"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Users className="w-4 h-4 shrink-0 text-orange-500" />
+                  {(!collapsed || isMobileDrawer) && (
+                    <span className="truncate">Acessos &amp; Equipe</span>
+                  )}
+                </div>
+              </button>
+            </>
+          )}
 
           {isPlatformView && (
             <>
@@ -619,23 +709,6 @@ export const Header: React.FC<HeaderProps> = ({
                   <Building2 className="w-4 h-4 shrink-0 text-orange-500" />
                   {(!collapsed || isMobileDrawer) && (
                     <span className="truncate">Segmento ({currentSegmentConfig.nome})</span>
-                  )}
-                </div>
-              </button>
-
-              <button
-                onClick={() => handleTriggerAction(onOpenTeamModal)}
-                className={`${itemBase} ${
-                  isDark
-                    ? 'text-neutral-300 hover:text-white hover:bg-neutral-800/80'
-                    : 'text-neutral-700 hover:text-neutral-950 hover:bg-neutral-100'
-                }`}
-                title="Gerenciar Acessos & Vínculos de Gerentes"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <Users className="w-4 h-4 shrink-0 text-orange-500" />
-                  {(!collapsed || isMobileDrawer) && (
-                    <span className="truncate">Acessos &amp; Equipe</span>
                   )}
                 </div>
               </button>
@@ -677,13 +750,33 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* SIDEBAR FOOTER: COLLAPSE TOGGLE ON DESKTOP */}
-        {!isMobileDrawer && onToggleSidebarCollapse && (
-          <div
-            className={`p-2.5 border-t ${
-              isDark ? 'border-neutral-800/80' : 'border-neutral-200'
-            }`}
-          >
+        {/* SIDEBAR FOOTER: LOGOUT & COLLAPSE TOGGLE */}
+        <div
+          className={`p-2.5 border-t space-y-1 ${
+            isDark ? 'border-neutral-800/80' : 'border-neutral-200'
+          }`}
+        >
+          {user && (
+            <button
+              onClick={() => {
+                setIsMobileMenuOpen(false);
+                signOut();
+              }}
+              className={`w-full flex items-center ${
+                collapsed && !isMobileDrawer ? 'justify-center py-2' : 'justify-between px-3 py-2'
+              } rounded-xl text-xs font-bold transition cursor-pointer ${
+                isDark
+                  ? 'text-red-400 hover:text-red-300 hover:bg-red-500/10'
+                  : 'text-red-600 hover:text-red-700 hover:bg-red-50'
+              }`}
+              title="Encerrar sessão e voltar para a Tela de Login Geral"
+            >
+              {(!collapsed || isMobileDrawer) && <span>Sair / Trocar Conta</span>}
+              <LogOut className="w-4 h-4 shrink-0" />
+            </button>
+          )}
+
+          {!isMobileDrawer && onToggleSidebarCollapse && (
             <button
               onClick={onToggleSidebarCollapse}
               className={`w-full flex items-center ${
@@ -702,8 +795,8 @@ export const Header: React.FC<HeaderProps> = ({
                 <PanelLeftClose className="w-4 h-4 text-neutral-400" />
               )}
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     );
   };
@@ -753,9 +846,9 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Store Brand Identity */}
             <div
-              onClick={() => onTabChange('operacao')}
+              onClick={() => onTabChange(isKitchenOnly ? 'pedidos' : 'operacao')}
               className="flex items-center gap-2.5 cursor-pointer min-w-0"
-              title="Ir para Operação do Dia"
+              title={isKitchenOnly ? 'Ir para Fila KDS' : 'Ir para Operação do Dia'}
             >
               <div
                 className="w-8 h-8 rounded-xl flex items-center justify-center text-base shadow-xs font-black text-white shrink-0"
@@ -770,8 +863,8 @@ export const Header: React.FC<HeaderProps> = ({
                   <h1 className="text-sm sm:text-base font-black tracking-tight truncate max-w-[140px] sm:max-w-[220px]">
                     {storeConfig.nome}
                   </h1>
-                  <span className="hidden md:inline-block text-[11px] text-orange-500 font-bold whitespace-nowrap">
-                    · {currentSegmentConfig.nome}
+                  <span className="hidden md:inline-block px-2 py-0.5 rounded-md bg-orange-500/15 text-[10px] text-orange-500 font-black whitespace-nowrap">
+                    {roleBadgeLabel}
                   </span>
                 </div>
               </div>
@@ -843,9 +936,9 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
 
-          {/* RIGHT ZONE: Live KDS Status Pill + Open/Close Switch + New Product + Theme + User */}
+          {/* RIGHT ZONE: Live KDS Status Pill + Open/Close Switch + New Product + Theme + User + Logout */}
           <div className="flex items-center gap-1.5 sm:gap-2">
-            {/* Quick KDS Counter Pill (Always visible on top bar for immediate awareness) */}
+            {/* Quick KDS Counter Pill */}
             <button
               type="button"
               onClick={() => onTabChange('pedidos')}
@@ -872,7 +965,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             {/* Live Store Open/Closed Quick Toggle */}
-            {onToggleStoreOpen && (
+            {!isKitchenOnly && onToggleStoreOpen && (
               <button
                 type="button"
                 onClick={onToggleStoreOpen}
@@ -890,19 +983,21 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* + Novo Produto CTA */}
-            <button
-              type="button"
-              onClick={onNewProduct}
-              className="px-3 py-1.5 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition cursor-pointer whitespace-nowrap"
-              style={{
-                backgroundColor: storeConfig.corTema || '#f97316',
-              }}
-              title="Cadastrar novo produto no cardápio"
-            >
-              <PlusCircle className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">+ Produto</span>
-            </button>
+            {/* + Novo Produto CTA (Manager & SuperAdmin only) */}
+            {isManagerOrSuper && (
+              <button
+                type="button"
+                onClick={onNewProduct}
+                className="px-3 py-1.5 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition cursor-pointer whitespace-nowrap"
+                style={{
+                  backgroundColor: storeConfig.corTema || '#f97316',
+                }}
+                title="Cadastrar novo produto no cardápio"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">+ Produto</span>
+              </button>
+            )}
 
             {/* Theme Toggle */}
             <button
@@ -918,28 +1013,46 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </button>
 
-            {/* User Auth Button */}
+            {/* User Auth & Logout Buttons */}
             {user ? (
-              <button
-                type="button"
-                onClick={onOpenTeamModal}
-                className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border font-bold transition cursor-pointer whitespace-nowrap ${btnSecondaryClass}`}
-                title={`Conectado como ${user.email}. Clique para gerenciar acessos.`}
-              >
-                {user.photoURL ? (
-                  <img
-                    src={user.photoURL}
-                    alt="User"
-                    referrerPolicy="no-referrer"
-                    className="w-4 h-4 rounded-full"
-                  />
-                ) : (
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+              <div className="flex items-center gap-1.5">
+                {isManagerOrSuper && (
+                  <button
+                    type="button"
+                    onClick={onOpenTeamModal}
+                    className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border font-bold transition cursor-pointer whitespace-nowrap ${btnSecondaryClass}`}
+                    title={`Conectado como ${user.email}. Clique para gerenciar acessos e senhas.`}
+                  >
+                    {user.photoURL ? (
+                      <img
+                        src={user.photoURL}
+                        alt="User"
+                        referrerPolicy="no-referrer"
+                        className="w-4 h-4 rounded-full"
+                      />
+                    ) : (
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                    )}
+                    <span className="hidden xl:inline truncate max-w-[100px]">
+                      {user.displayName || user.email?.split('@')[0]}
+                    </span>
+                  </button>
                 )}
-                <span className="hidden xl:inline truncate max-w-[100px]">
-                  {user.displayName || user.email?.split('@')[0]}
-                </span>
-              </button>
+
+                <button
+                  type="button"
+                  onClick={signOut}
+                  className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border font-bold transition cursor-pointer whitespace-nowrap ${
+                    isDark
+                      ? 'bg-neutral-800 hover:bg-red-500/20 text-red-400 border-neutral-700 hover:border-red-500/30'
+                      : 'bg-neutral-100 hover:bg-red-50 text-red-600 border-neutral-300'
+                  }`}
+                  title="Sair / Trocar de Conta"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Sair</span>
+                </button>
+              </div>
             ) : (
               <button
                 type="button"

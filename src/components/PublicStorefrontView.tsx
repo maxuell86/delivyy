@@ -57,6 +57,7 @@ interface PublicStorefrontViewProps {
   storeConfig: StoreConfig;
   onSaveConfig?: (updated: StoreConfig) => void;
   onExitPublicMode?: () => void;
+  onOpenMarketplace?: () => void;
   showAdminReturnBar?: boolean;
 }
 
@@ -65,6 +66,7 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
   storeConfig,
   onSaveConfig,
   onExitPublicMode,
+  onOpenMarketplace,
   showAdminReturnBar = false,
 }) => {
   const currentSegment = storeConfig.segmento || 'hamburgueria';
@@ -338,7 +340,19 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
   const [deliveryType, setDeliveryType] = useState<'delivery' | 'retirada' | 'mesa'>(
     initialMesaParam ? 'mesa' : 'delivery'
   );
+  const [deliveryCep, setDeliveryCep] = useState(() => localStorage.getItem('omni_cust_cep') || '');
   const [deliveryStreet, setDeliveryStreet] = useState(() => localStorage.getItem('omni_cust_street') || '');
+  const [deliveryNumber, setDeliveryNumber] = useState(() => localStorage.getItem('omni_cust_number') || '');
+  const [deliveryComplement, setDeliveryComplement] = useState(
+    () => localStorage.getItem('omni_cust_complement') || ''
+  );
+  const [deliveryReference, setDeliveryReference] = useState(
+    () => localStorage.getItem('omni_cust_reference') || ''
+  );
+  const [deliveryPlaceType, setDeliveryPlaceType] = useState<'Casa' | 'Apartamento' | 'Trabalho'>(
+    () => (localStorage.getItem('omni_cust_place_type') as any) || 'Casa'
+  );
+  const [isFetchingCep, setIsFetchingCep] = useState(false);
   const [selectedNeighborhood, setSelectedNeighborhood] = useState<string>(() => {
     const saved = localStorage.getItem('omni_cust_bairro');
     if (saved) return saved;
@@ -347,6 +361,52 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
   const [mesaNumero, setMesaNumero] = useState(initialMesaParam);
   const [orderNotes, setOrderNotes] = useState('');
   const [customerToast, setCustomerToast] = useState<string | null>(null);
+
+  const handleCepChange = async (rawCep: string) => {
+    const digits = rawCep.replace(/\D/g, '').slice(0, 8);
+    const formatted = digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
+    setDeliveryCep(formatted);
+
+    if (digits.length === 8) {
+      setIsFetchingCep(true);
+      try {
+        const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+        if (res.ok) {
+          const data = await res.json();
+          if (!data.erro) {
+            if (data.logradouro) {
+              setDeliveryStreet(data.logradouro);
+            }
+            if (data.bairro) {
+              const matched = availableNeighborhoods.find(
+                (n) => n.bairro.toLowerCase() === String(data.bairro).trim().toLowerCase()
+              );
+              if (matched) {
+                setSelectedNeighborhood(matched.bairro);
+              }
+            }
+          }
+        }
+      } catch {
+        // Fallback silently if offline
+      } finally {
+        setIsFetchingCep(false);
+      }
+    }
+  };
+
+  const buildFullDeliveryAddress = (): string => {
+    const rua = deliveryStreet.trim();
+    const num = deliveryNumber.trim() || 'S/N';
+    const compl = deliveryComplement.trim();
+    const ref = deliveryReference.trim();
+    let full = `${rua}, Nº ${num}`;
+    if (compl) full += ` (${compl})`;
+    if (ref) full += ` — Ref: ${ref}`;
+    full += ` [${deliveryPlaceType}]`;
+    if (deliveryCep.trim()) full += ` • CEP: ${deliveryCep.trim()}`;
+    return full;
+  };
 
   const showCustomerToast = (msg: string) => {
     setCustomerToast(msg);
@@ -774,9 +834,18 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
     msg += `*Cliente:* ${customerName}\n`;
     msg += `*WhatsApp:* ${customerPhone}\n`;
     if (deliveryType === 'delivery') {
-      msg += `*Modalidade:* Entrega (Delivery)\n`;
-      msg += `*Endereço:* ${deliveryStreet}\n`;
+      msg += `*Modalidade:* Entrega (Delivery - ${deliveryPlaceType})\n`;
+      msg += `*Logradouro:* ${deliveryStreet.trim()}, Nº ${deliveryNumber.trim() || 'S/N'}\n`;
+      if (deliveryComplement.trim()) {
+        msg += `*Complemento:* ${deliveryComplement.trim()}\n`;
+      }
+      if (deliveryReference.trim()) {
+        msg += `*Ponto de Referência:* ${deliveryReference.trim()}\n`;
+      }
       msg += `*Bairro:* ${selectedNeighborhood || storeConfig.bairro}\n`;
+      if (deliveryCep.trim()) {
+        msg += `*CEP:* ${deliveryCep.trim()}\n`;
+      }
     } else if (deliveryType === 'retirada') {
       msg += `*Modalidade:* Retirada no Balcão\n`;
     } else {
@@ -839,9 +908,19 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
       setCheckoutError('Por favor, informe um número de WhatsApp válido com DDD.');
       return;
     }
-    if (deliveryType === 'delivery' && !deliveryStreet.trim()) {
-      setCheckoutError('Por favor, informe o endereço completo (Rua e Número) para entrega.');
-      return;
+    if (deliveryType === 'delivery') {
+      if (!deliveryStreet.trim()) {
+        setCheckoutError('Por favor, informe o nome da Rua / Avenida para a entrega.');
+        return;
+      }
+      if (!deliveryNumber.trim()) {
+        setCheckoutError('Por favor, informe o número do endereço (ou clique em "S/N").');
+        return;
+      }
+      if (!deliveryReference.trim()) {
+        setCheckoutError('Por favor, informe um Ponto de Referência para ajudar o entregador.');
+        return;
+      }
     }
     if (paymentMethod === 'Dinheiro' && trocoPara.trim()) {
       const trocoNum = parseFloat(trocoPara.replace(',', '.'));
@@ -857,12 +936,24 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
     try {
       localStorage.setItem('omni_cust_name', customerName.trim());
       localStorage.setItem('omni_cust_phone', customerPhone.trim());
+      localStorage.setItem('omni_cust_cep', deliveryCep.trim());
       localStorage.setItem('omni_cust_street', deliveryStreet.trim());
+      localStorage.setItem('omni_cust_number', deliveryNumber.trim());
+      localStorage.setItem('omni_cust_complement', deliveryComplement.trim());
+      localStorage.setItem('omni_cust_reference', deliveryReference.trim());
+      localStorage.setItem('omni_cust_place_type', deliveryPlaceType);
       localStorage.setItem('omni_cust_bairro', selectedNeighborhood);
     } catch {}
 
     const effectiveStoreId = storeConfig.id || 'default';
     const orderNum = Math.floor(100 + Math.random() * 899);
+    const formattedAddress =
+      deliveryType === 'delivery'
+        ? buildFullDeliveryAddress()
+        : deliveryType === 'mesa'
+        ? `Mesa ${mesaNumero || 'Local'}`
+        : 'Retirada no Balcão da Loja';
+
     const newOrder: Order = {
       id: 'ord_' + Date.now(),
       storeId: effectiveStoreId,
@@ -870,12 +961,7 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
       clienteNome: customerName.trim(),
       clienteTelefone: customerPhone.trim(),
       tipoEntrega: deliveryType,
-      endereco:
-        deliveryType === 'delivery'
-          ? deliveryStreet.trim()
-          : deliveryType === 'mesa'
-          ? `Mesa ${mesaNumero || 'Local'}`
-          : 'Retirada no Balcão da Loja',
+      endereco: formattedAddress,
       bairro:
         deliveryType === 'delivery'
           ? selectedNeighborhood || storeConfig.bairro || 'Centro'
@@ -935,6 +1021,37 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
     setIsTrackingModalOpen(true);
   };
 
+  if (storeConfig.statusLicenca === 'suspenso' && !showAdminReturnBar) {
+    return (
+      <div className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-6 text-center space-y-5">
+        <div className="w-16 h-16 rounded-3xl bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400">
+          <Store className="w-8 h-8" />
+        </div>
+        <div className="max-w-md space-y-2">
+          <h1 className="text-xl sm:text-2xl font-black">
+            Estabelecimento Temporariamente Indisponível
+          </h1>
+          <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
+            O cardápio digital de <strong>{storeConfig.nome}</strong> encontra-se temporariamente suspenso na plataforma <strong>Delivy</strong>.
+          </p>
+        </div>
+        {onOpenMarketplace && (
+          <button
+            type="button"
+            onClick={onOpenMarketplace}
+            className="px-5 py-3 rounded-2xl bg-orange-500 hover:bg-orange-600 text-white text-xs sm:text-sm font-black flex items-center gap-2 shadow-lg cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Ver Outros Restaurantes no App Delivy</span>
+          </button>
+        )}
+        <p className="text-[11px] text-neutral-500 pt-6">
+          Tecnologia por <strong className="text-orange-500">Delivy</strong> • Plataforma de Delivery
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${
@@ -980,17 +1097,33 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
 
         {/* Top Bar Actions */}
-        <div className="absolute top-4 left-4 right-4 max-w-4xl mx-auto flex items-center justify-between">
-          <span
-            className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-lg backdrop-blur-md ${
-              storeConfig.aberto
-                ? 'bg-emerald-500/95 text-neutral-950'
-                : 'bg-red-500/95 text-white'
-            }`}
-          >
-            <span className={`w-2 h-2 rounded-full ${storeConfig.aberto ? 'bg-neutral-950 animate-ping' : 'bg-white'}`} />
-            {storeConfig.aberto ? 'Aberto Agora • Recebendo Pedidos' : 'Fechado no Momento'}
-          </span>
+        <div className="absolute top-4 left-4 right-4 max-w-4xl mx-auto flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            {onOpenMarketplace && (
+              <button
+                type="button"
+                onClick={onOpenMarketplace}
+                className="px-3 py-1 rounded-full bg-black/60 hover:bg-black/80 text-white border border-white/20 text-xs font-black flex items-center gap-1.5 shadow-lg backdrop-blur-md transition cursor-pointer"
+                title="Voltar para a lista de todos os restaurantes no App Delivy"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 text-orange-400" />
+                <span>App Delivy</span>
+              </button>
+            )}
+            <span
+              className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-lg backdrop-blur-md ${
+                storeConfig.aberto
+                  ? 'bg-emerald-500/95 text-neutral-950'
+                  : 'bg-red-500/95 text-white'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${storeConfig.aberto ? 'bg-neutral-950 animate-ping' : 'bg-white'}`} />
+              <span className="hidden sm:inline">
+                {storeConfig.aberto ? 'Aberto Agora • Recebendo Pedidos' : 'Fechado no Momento'}
+              </span>
+              <span className="sm:hidden">{storeConfig.aberto ? 'Aberto' : 'Fechado'}</span>
+            </span>
+          </div>
 
           <div className="flex items-center gap-2">
             {activeOrder && (
@@ -1402,6 +1535,32 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
             })}
           </div>
         )}
+
+        {/* RODAPÉ OFICIAL DELIVY NA VITRINE DO CLIENTE */}
+        <div
+          className={`mt-8 pt-6 border-t flex flex-col sm:flex-row items-center justify-between gap-3 text-xs ${
+            isDark ? 'border-neutral-800/80 text-neutral-400' : 'border-neutral-200 text-neutral-500'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <span className="w-5 h-5 rounded-md bg-gradient-to-br from-orange-500 to-red-600 text-white font-black flex items-center justify-center text-[10px]">
+              D
+            </span>
+            <span>
+              Tecnologia por <strong className={isDark ? 'text-white' : 'text-neutral-900'}>Delivy</strong> • Cardápio Digital &amp; Delivery
+            </span>
+          </div>
+
+          {onOpenMarketplace && (
+            <button
+              type="button"
+              onClick={onOpenMarketplace}
+              className="text-orange-500 hover:underline font-bold cursor-pointer"
+            >
+              Ver todos os restaurantes no App Delivy →
+            </button>
+          )}
+        </div>
       </main>
 
       {/* Floating Cart Bottom Bar */}
@@ -1881,43 +2040,155 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
                 </div>
 
                 {deliveryType === 'delivery' && (
-                  <div className="space-y-2.5">
-                    <div>
-                      <label className="block font-bold mb-1">Endereço Completo (Rua, Número, Complemento) *</label>
-                      <input
-                        type="text"
-                        value={deliveryStreet}
-                        onChange={(e) => setDeliveryStreet(e.target.value)}
-                        placeholder="Ex: Rua das Palmeiras, Nº 420 - Casa"
-                        className={`w-full px-3 py-2 rounded-xl border outline-none ${
-                          isDark ? 'bg-neutral-950 border-neutral-800 text-white' : 'bg-white border-neutral-300 text-neutral-900'
-                        }`}
-                      />
+                  <div
+                    className={`p-3.5 rounded-2xl border space-y-3 ${
+                      isDark ? 'bg-neutral-950/70 border-neutral-800' : 'bg-neutral-50 border-neutral-200'
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-black text-orange-400 flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5" />
+                        <span>Endereço Completo para Entrega</span>
+                      </span>
+
+                      {/* Tipo de Local (Casa / Apartamento / Trabalho) */}
+                      <div className="flex items-center gap-1">
+                        {(['Casa', 'Apartamento', 'Trabalho'] as const).map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setDeliveryPlaceType(t)}
+                            className={`px-2 py-1 rounded-lg text-[10px] font-black border transition cursor-pointer ${
+                              deliveryPlaceType === t
+                                ? 'bg-orange-500 text-neutral-950 border-orange-500'
+                                : isDark
+                                ? 'bg-neutral-900 border-neutral-800 text-neutral-400'
+                                : 'bg-white border-neutral-300 text-neutral-600'
+                            }`}
+                          >
+                            {t === 'Casa' ? '🏠 Casa' : t === 'Apartamento' ? '🏢 Apto' : '💼 Trabalho'}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="font-bold">Selecione seu Bairro / Região (Cálculo Automático de Taxa) *</label>
-                        <span className="text-[11px] font-black text-emerald-500 font-mono tabular-nums">
-                          Frete: R$ {activeDeliveryFee.toFixed(2).replace('.', ',')} • {activeDeliveryTime}
-                        </span>
+                    {/* Linha 1: CEP (Busca Automática) + Bairro/Região (Cálculo de Taxa) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                      <div className="sm:col-span-4">
+                        <label className="block font-bold mb-1">
+                          CEP <span className="text-[10px] text-neutral-400 font-normal">(Opcional)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={deliveryCep}
+                          onChange={(e) => handleCepChange(e.target.value)}
+                          placeholder="00000-000"
+                          className={`w-full px-3 py-2 rounded-xl border font-mono outline-none focus:border-orange-500 ${
+                            isDark ? 'bg-neutral-900 border-neutral-800 text-white' : 'bg-white border-neutral-300 text-neutral-900'
+                          }`}
+                        />
+                        {isFetchingCep && (
+                          <span className="text-[10px] text-orange-400 block mt-0.5">
+                            Buscando endereço pelo CEP...
+                          </span>
+                        )}
                       </div>
-                      <select
-                        value={selectedNeighborhood}
-                        onChange={(e) => setSelectedNeighborhood(e.target.value)}
-                        className={`w-full px-3 py-2 rounded-xl border font-bold outline-none ${
-                          isDark ? 'bg-neutral-950 border-neutral-800 text-white' : 'bg-white border-neutral-300 text-neutral-900'
-                        }`}
-                      >
-                        {availableNeighborhoods.map((item, idx) => (
-                          <option key={`${item.bairro}_${idx}`} value={item.bairro}>
-                            {item.bairro} ({item.faixaNome}) — Taxa R$ {item.taxa.toFixed(2).replace('.', ',')} • {item.tempo}
+
+                      <div className="sm:col-span-8">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-bold">Bairro / Região *</label>
+                          <span className="text-[10px] font-black text-emerald-500 font-mono tabular-nums">
+                            Frete: R$ {activeDeliveryFee.toFixed(2).replace('.', ',')} • {activeDeliveryTime}
+                          </span>
+                        </div>
+                        <select
+                          value={selectedNeighborhood}
+                          onChange={(e) => setSelectedNeighborhood(e.target.value)}
+                          className={`w-full px-3 py-2 rounded-xl border font-bold outline-none focus:border-orange-500 ${
+                            isDark ? 'bg-neutral-900 border-neutral-800 text-white' : 'bg-white border-neutral-300 text-neutral-900'
+                          }`}
+                        >
+                          {availableNeighborhoods.map((item, idx) => (
+                            <option key={`${item.bairro}_${idx}`} value={item.bairro}>
+                              {item.bairro} ({item.faixaNome}) — R$ {item.taxa.toFixed(2).replace('.', ',')} • {item.tempo}
+                            </option>
+                          ))}
+                          <option value="Outro Bairro">
+                            Outro Bairro — Taxa Padrão R$ {(storeConfig.taxaEntregaPadrao || 7).toFixed(2).replace('.', ',')} ({storeConfig.tempoEntrega})
                           </option>
-                        ))}
-                        <option value="Outro Bairro">
-                          Outro Bairro — Taxa Padrão R$ {(storeConfig.taxaEntregaPadrao || 7).toFixed(2).replace('.', ',')} ({storeConfig.tempoEntrega})
-                        </option>
-                      </select>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Linha 2: Rua / Logradouro + Número (com botão S/N) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                      <div className="sm:col-span-8">
+                        <label className="block font-bold mb-1">Rua / Avenida / Logradouro *</label>
+                        <input
+                          type="text"
+                          value={deliveryStreet}
+                          onChange={(e) => setDeliveryStreet(e.target.value)}
+                          placeholder="Ex: Av. Brasil, Rua das Palmeiras..."
+                          className={`w-full px-3 py-2 rounded-xl border outline-none focus:border-orange-500 ${
+                            isDark ? 'bg-neutral-900 border-neutral-800 text-white' : 'bg-white border-neutral-300 text-neutral-900'
+                          }`}
+                        />
+                      </div>
+
+                      <div className="sm:col-span-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-bold">Número *</label>
+                          <button
+                            type="button"
+                            onClick={() => setDeliveryNumber('S/N')}
+                            className="text-[10px] text-orange-400 hover:underline font-bold cursor-pointer"
+                          >
+                            Sem Nº (S/N)
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          value={deliveryNumber}
+                          onChange={(e) => setDeliveryNumber(e.target.value)}
+                          placeholder="Ex: 420"
+                          className={`w-full px-3 py-2 rounded-xl border outline-none focus:border-orange-500 ${
+                            isDark ? 'bg-neutral-900 border-neutral-800 text-white' : 'bg-white border-neutral-300 text-neutral-900'
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Linha 3: Complemento + Ponto de Referência */}
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                      <div className="sm:col-span-5">
+                        <label className="block font-bold mb-1">
+                          Complemento <span className="text-[10px] text-neutral-400 font-normal">(Opcional)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={deliveryComplement}
+                          onChange={(e) => setDeliveryComplement(e.target.value)}
+                          placeholder="Ex: Apto 202, Bloco B, Fundos"
+                          className={`w-full px-3 py-2 rounded-xl border outline-none focus:border-orange-500 ${
+                            isDark ? 'bg-neutral-900 border-neutral-800 text-white' : 'bg-white border-neutral-300 text-neutral-900'
+                          }`}
+                        />
+                      </div>
+
+                      <div className="sm:col-span-7">
+                        <label className="block font-bold mb-1">
+                          Ponto de Referência * <span className="text-[10px] text-emerald-400 font-normal">(Ajuda o entregador)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={deliveryReference}
+                          onChange={(e) => setDeliveryReference(e.target.value)}
+                          placeholder="Ex: Próximo ao mercado, portão branco, esquina..."
+                          className={`w-full px-3 py-2 rounded-xl border outline-none focus:border-orange-500 ${
+                            isDark ? 'bg-neutral-900 border-neutral-800 text-white' : 'bg-white border-neutral-300 text-neutral-900'
+                          }`}
+                        />
+                      </div>
                     </div>
                   </div>
                 )}

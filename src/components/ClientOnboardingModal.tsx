@@ -1,17 +1,12 @@
 import React, { useState } from 'react';
-import { 
-  X, 
-  Sparkles, 
-  Store, 
-  Palette, 
-  CreditCard, 
-  UtensilsCrossed, 
-  ChevronRight, 
-  ChevronLeft, 
-  Check, 
-  Rocket, 
-  Truck,
-  CheckCircle2
+import {
+  X,
+  CreditCard,
+  UtensilsCrossed,
+  ChevronRight,
+  ChevronLeft,
+  Check,
+  Rocket,
 } from 'lucide-react';
 import { StoreConfig, SegmentId } from '../types';
 import { SEGMENTOS_DISPONIVEIS } from '../data/segmentData';
@@ -44,6 +39,7 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
   const [whatsapp, setWhatsapp] = useState('5565996953036');
   const [gerenteNome, setGerenteNome] = useState('');
   const [gerenteEmail, setGerenteEmail] = useState('');
+  const [gerenteSenha, setGerenteSenha] = useState('123456');
 
   // Step 2: Branding
   const [paletaId, setPaletaId] = useState('laranja-fogo');
@@ -97,14 +93,18 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
       whatsapp: whatsapp.replace(/\D/g, ''),
       whatsappExibicao: whatsapp,
       corTema,
-      taxaEntregaPadrao: parseFloat(taxaEntrega) || 7.00,
+      taxaEntregaPadrao: parseFloat(taxaEntrega) || 7.0,
       tempoEntrega,
       aberto: true,
       horarioFuncionamento: 'Terça a Domingo das 18h às 23h30',
       cardapioConfirmadoHoje: true,
-      ultimaConfirmacao: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      ultimaConfirmacao: new Date().toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
       gerenteEmail: gerenteEmail.trim().toLowerCase() || undefined,
       gerenteNome: gerenteNome.trim() || undefined,
+      gerenteSenha: gerenteSenha.trim() || '123456',
       statusLicenca: 'ativo',
       criadoEm: new Date().toISOString(),
       pagamentos: {
@@ -143,7 +143,6 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm overflow-y-auto">
       <div className="bg-neutral-900 border border-neutral-800 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col my-auto animate-in fade-in zoom-in-95 duration-200">
-        
         {/* Header */}
         <div className="px-6 py-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950/60">
           <div className="flex items-center gap-2.5">
@@ -152,15 +151,18 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-black text-white">
-                Implantação de Estabelecimento &amp; Vínculo de Gerente
+                Implantação de Estabelecimento &amp; Login do Gerente
               </h2>
               <p className="text-xs text-neutral-400">
-                Configure um novo estabelecimento isolado e vincule o login exclusivo do gerente.
+                Configure um novo estabelecimento isolado e defina o login e senha do gerente.
               </p>
             </div>
           </div>
 
-          <button onClick={onClose} className="p-1 rounded-lg text-neutral-400 hover:text-white cursor-pointer">
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg text-neutral-400 hover:text-white cursor-pointer"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -201,7 +203,6 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto max-h-[65vh] space-y-5">
-          
           {/* ETAPA 1: DADOS DO ESTABELECIMENTO + LOGIN DO GERENTE */}
           {step === 1 && (
             <div className="space-y-4">
@@ -216,8 +217,12 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
                       : 'border-neutral-800 bg-neutral-950 text-neutral-400'
                   }`}
                 >
-                  <span className="block text-xs font-black text-orange-400">+ Criar Novo Estabelecimento Isolado</span>
-                  <span className="text-[11px] text-neutral-400">Cria um novo ID de loja separado para um novo cliente</span>
+                  <span className="block text-xs font-black text-orange-400">
+                    + Criar Novo Estabelecimento Isolado
+                  </span>
+                  <span className="text-[11px] text-neutral-400">
+                    Cria um novo ID de loja separado para um novo cliente
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -229,7 +234,9 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
                   }`}
                 >
                   <span className="block text-xs font-black">Reconfigurar Loja Selecionada</span>
-                  <span className="text-[11px] text-neutral-400">Atualiza os dados do estabelecimento atual ({activeStoreId})</span>
+                  <span className="text-[11px] text-neutral-400">
+                    Atualiza os dados do estabelecimento atual ({activeStoreId})
+                  </span>
                 </button>
               </div>
 
@@ -249,12 +256,12 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
               {/* Vínculo do Login do Gerente do Estabelecimento */}
               <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30 space-y-2.5">
                 <span className="text-xs font-bold text-emerald-400 block">
-                  Vincular Login Exclusivo do Gerente do Estabelecimento (Opcional agora)
+                  Credenciais de Acesso do Gerente deste Estabelecimento
                 </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
                   <div>
                     <label className="block font-semibold text-neutral-300 mb-1">
-                      Nome do Gerente / Proprietário
+                      Nome do Gerente
                     </label>
                     <input
                       type="text"
@@ -266,14 +273,26 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
                   </div>
                   <div>
                     <label className="block font-semibold text-neutral-300 mb-1">
-                      E-mail Google do Gerente (Acesso Exclusivo)
+                      E-mail de Login
                     </label>
                     <input
                       type="email"
                       value={gerenteEmail}
                       onChange={(e) => setGerenteEmail(e.target.value)}
-                      placeholder="gerente.cliente@gmail.com"
+                      placeholder="gerente@loja.com"
                       className="w-full px-3 py-2 bg-neutral-950 border border-neutral-700 rounded-xl text-white outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-neutral-300 mb-1">
+                      Senha Inicial / PIN
+                    </label>
+                    <input
+                      type="text"
+                      value={gerenteSenha}
+                      onChange={(e) => setGerenteSenha(e.target.value)}
+                      placeholder="123456"
+                      className="w-full px-3 py-2 bg-neutral-950 border border-neutral-700 rounded-xl text-white font-mono outline-none focus:border-emerald-500"
                     />
                   </div>
                 </div>
@@ -391,7 +410,9 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
 
               <div className="p-3.5 bg-neutral-950 border border-neutral-800 rounded-xl flex items-center justify-between text-xs">
                 <div>
-                  <span className="font-bold text-white block">Ajuste Livre de Cor (Hexadecimal)</span>
+                  <span className="font-bold text-white block">
+                    Ajuste Livre de Cor (Hexadecimal)
+                  </span>
                   <span className="text-neutral-400">Escolha a cor exata da logo do cliente</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -519,9 +540,7 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
                       className="mt-1 text-orange-500 focus:ring-orange-500"
                     />
                     <div>
-                      <p className="font-bold text-white text-xs">
-                        Iniciar com Cardápio Vazio
-                      </p>
+                      <p className="font-bold text-white text-xs">Iniciar com Cardápio Vazio</p>
                       <p className="text-[11px] text-neutral-400 mt-0.5">
                         Cadastre os produtos um a um manualmente.
                       </p>
@@ -536,6 +555,11 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
                 <p className="text-neutral-400">
                   • <strong>Loja:</strong> {nome} ({segmento})
                 </p>
+                {gerenteEmail && (
+                  <p className="text-emerald-400">
+                    • <strong>Login do Gerente:</strong> {gerenteEmail} (Senha: {gerenteSenha || '123456'})
+                  </p>
+                )}
                 <p className="text-neutral-400">
                   • <strong>WhatsApp:</strong> {whatsapp}
                 </p>
@@ -553,7 +577,6 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
               </div>
             </div>
           )}
-
         </div>
 
         {/* Footer Navigation Buttons */}
@@ -588,7 +611,6 @@ export const ClientOnboardingModal: React.FC<ClientOnboardingModalProps> = ({
             </button>
           )}
         </div>
-
       </div>
     </div>
   );
