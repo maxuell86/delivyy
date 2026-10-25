@@ -129,9 +129,6 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
     );
   }, [availableNeighborhoods, selectedBairro, storeConfig.bairro, storeConfig.taxaEntregaPadrao, storeConfig.tempoEntrega]);
 
-  const activeDeliveryFee = deliveryType === 'delivery' ? selectedNeighborhoodRule.taxa : 0;
-  const activeDeliveryTime = selectedNeighborhoodRule.tempo || storeConfig.tempoEntrega;
-  
   // Payment states in Cart
   const [paymentMethod, setPaymentMethod] = useState<'PIX' | 'CartaoCredito' | 'CartaoDebito' | 'Dinheiro' | 'ValeRefeicao'>('PIX');
   const [trocoPara, setTrocoPara] = useState('');
@@ -146,6 +143,9 @@ export const CustomerSimulator: React.FC<CustomerSimulatorProps> = ({
   const [customerName, setCustomerName] = useState('Mariana Ferreira');
   const [customerPhone, setCustomerPhone] = useState('5565999881122');
   const [deliveryType, setDeliveryType] = useState<'delivery' | 'retirada'>('delivery');
+
+  const activeDeliveryFee = deliveryType === 'delivery' ? selectedNeighborhoodRule.taxa : 0;
+  const activeDeliveryTime = selectedNeighborhoodRule.tempo || storeConfig.tempoEntrega;
 
   // Filter products for customer
   const filteredProducts = products.filter((p) => {

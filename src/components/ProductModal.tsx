@@ -106,11 +106,14 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   const [destaque, setDestaque] = useState(false);
   const [permiteMeioAMeio, setPermiteMeioAMeio] = useState(false);
 
-  // Technical sheet & days states
+  // Technical sheet, stock & days states
   const [pesoGramas, setPesoGramas] = useState('');
   const [porcaoPessoas, setPorcaoPessoas] = useState('Individual (1 pessoa)');
   const [alergenos, setAlergenos] = useState<string[]>([]);
   const [diasDisponiveis, setDiasDisponiveis] = useState<string[]>(DIAS_SEMANA.map((d) => d.id));
+  const [controlarEstoque, setControlarEstoque] = useState(true);
+  const [estoqueAtual, setEstoqueAtual] = useState('25');
+  const [estoqueMinimo, setEstoqueMinimo] = useState('5');
 
   // Custom Category inline creator state
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
@@ -150,6 +153,9 @@ export const ProductModal: React.FC<ProductModalProps> = ({
           ? [...product.diasDisponiveis]
           : DIAS_SEMANA.map((d) => d.id)
       );
+      setControlarEstoque(product.controlarEstoque !== undefined ? product.controlarEstoque : true);
+      setEstoqueAtual(product.estoqueAtual !== undefined ? String(product.estoqueAtual) : '25');
+      setEstoqueMinimo(product.estoqueMinimo !== undefined ? String(product.estoqueMinimo) : '5');
       setOpcoes(product.opcoes ? JSON.parse(JSON.stringify(product.opcoes)) : []);
       setUploadedFileName(product.foto?.startsWith('data:image') ? 'Foto enviada do dispositivo' : null);
     } else {
@@ -171,6 +177,9 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       setPorcaoPessoas('Individual (1 pessoa)');
       setAlergenos([]);
       setDiasDisponiveis(DIAS_SEMANA.map((d) => d.id));
+      setControlarEstoque(true);
+      setEstoqueAtual('25');
+      setEstoqueMinimo('5');
       setUploadedFileName(null);
 
       const preset = PRESETS_OPCIONAIS[currentSegment];
@@ -519,6 +528,9 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       porcaoPessoas: porcaoPessoas.trim() || undefined,
       alergenos: alergenos.length > 0 ? alergenos : undefined,
       diasDisponiveis: diasDisponiveis.length > 0 ? diasDisponiveis : undefined,
+      controlarEstoque,
+      estoqueAtual: controlarEstoque ? Math.max(0, parseInt(estoqueAtual) || 0) : undefined,
+      estoqueMinimo: controlarEstoque ? Math.max(0, parseInt(estoqueMinimo) || 5) : undefined,
       permiteMeioAMeio: currentSegment === 'pizzaria' ? permiteMeioAMeio : undefined,
       opcoes,
       atualizadoEm: new Date().toISOString(),
@@ -824,13 +836,38 @@ export const ProductModal: React.FC<ProductModalProps> = ({
 
               {/* Automatic Profit Margin Calculation Bar */}
               {lucroBruto !== null && margemPct !== null && (
-                <div className="px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-xs">
-                  <span className="text-neutral-300 flex items-center gap-1.5">
-                    <DollarSign className="w-4 h-4 text-emerald-400" />
-                    <span>Rentabilidade estimada por venda:</span>
+                <div
+                  className={`px-3.5 py-2.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${
+                    margemPct >= 50
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : margemPct >= 30
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                      : 'bg-red-500/10 border-red-500/30 text-red-300'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 font-semibold">
+                    <DollarSign className="w-4 h-4 shrink-0" />
+                    <span>
+                      Simulador de Margem &amp; CMV (sobre R$ {vendaEfetiva.toFixed(2).replace('.', ',')}):
+                    </span>
                   </span>
-                  <div className="font-mono tabular-nums font-bold text-emerald-400">
-                    Lucro R$ {lucroBruto.toFixed(2).replace('.', ',')} ({margemPct}% de margem)
+                  <div className="flex flex-wrap items-center gap-2 font-mono tabular-nums font-bold">
+                    <span>Lucro: R$ {lucroBruto.toFixed(2).replace('.', ',')}</span>
+                    <span>•</span>
+                    <span>Margem: {margemPct}%</span>
+                    <span>•</span>
+                    <span>CMV: {Math.max(0, 100 - margemPct)}%</span>
+                    <span
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                        margemPct >= 50
+                          ? 'bg-emerald-500 text-neutral-950'
+                          : margemPct >= 30
+                          ? 'bg-amber-500 text-neutral-950'
+                          : 'bg-red-500 text-white'
+                      }`}
+                    >
+                      {margemPct >= 50 ? 'Margem Saudável' : margemPct >= 30 ? 'Atenção CMV' : 'Margem Baixa'}
+                    </span>
                   </div>
                 </div>
               )}
@@ -1030,6 +1067,58 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Controle de Estoque & Pausa Automática */}
+              <div className="p-4 rounded-xl bg-neutral-950 border border-neutral-800 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider block">
+                      Controle de Estoque e Baixa Automática
+                    </label>
+                    <p className="text-xs text-neutral-400 mt-0.5">
+                      Quando o estoque chega a zero, o item é pausado automaticamente no cardápio.
+                    </p>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-orange-400">
+                    <input
+                      type="checkbox"
+                      checked={controlarEstoque}
+                      onChange={(e) => setControlarEstoque(e.target.checked)}
+                      className="w-4 h-4 rounded text-orange-500 focus:ring-0 bg-neutral-900 border-neutral-700"
+                    />
+                    <span>Controlar Estoque deste Item</span>
+                  </label>
+                </div>
+
+                {controlarEstoque && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-xs font-bold text-neutral-400 mb-1">
+                        Quantidade Atual em Estoque ({unidadeMedida})
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={estoqueAtual}
+                        onChange={(e) => setEstoqueAtual(e.target.value)}
+                        className="w-full px-3.5 py-2 bg-neutral-900 border border-neutral-700 focus:border-orange-500 rounded-xl text-white text-sm font-mono font-bold outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-neutral-400 mb-1">
+                        Alerta de Estoque Mínimo ({unidadeMedida})
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={estoqueMinimo}
+                        onChange={(e) => setEstoqueMinimo(e.target.value)}
+                        className="w-full px-3.5 py-2 bg-neutral-900 border border-neutral-700 focus:border-orange-500 rounded-xl text-amber-400 text-sm font-mono font-bold outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Disponibilidade por Dia da Semana */}

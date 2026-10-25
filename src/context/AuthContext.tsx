@@ -16,7 +16,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
 }
 
-const SUPER_ADMIN_EMAIL = 'maxuell86@gmail.com';
+export const SUPER_ADMIN_EMAIL = 'maxuell86@gmail.com';
 
 const AuthContext = createContext<AuthContextType>({
   user: null,

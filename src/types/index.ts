@@ -69,11 +69,14 @@ export interface Product {
   selo?: string;
   tempoPreparoMin?: number;
   unidadeMedida?: string; // "unidade", "fatia", "porção", "500ml", "kg"
-  // Ficha Técnica & Disponibilidade Avançada
+  // Ficha Técnica, Estoque & Disponibilidade Avançada
   pesoGramas?: string; // ex: "350g", "500ml"
   porcaoPessoas?: string; // ex: "Individual (1 pessoa)", "Serve 2 pessoas"
   alergenos?: string[]; // ex: ["Contém Glúten", "Contém Lactose", "Vegano"]
   diasDisponiveis?: string[]; // ex: ["seg", "ter", "qua", "qui", "sex", "sab", "dom"]
+  controlarEstoque?: boolean;
+  estoqueAtual?: number;
+  estoqueMinimo?: number;
   opcoes?: ProductOptionGroup[];
   // Regras de Pizza (quando segmento for pizzaria)
   permiteMeioAMeio?: boolean;

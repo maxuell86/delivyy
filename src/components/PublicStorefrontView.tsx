@@ -28,12 +28,29 @@ import {
   Sparkles,
   AlertCircle,
   Star,
+  RotateCcw,
+  Calendar,
 } from 'lucide-react';
 import { Product, StoreConfig, CartItem, CategoryId, Order, StoreReview } from '../types';
 import { CATEGORIAS_POR_SEGMENTO, SEGMENTOS_DISPONIVEIS } from '../data/segmentData';
 import { generatePixPayload } from '../utils/pixPayload';
 import { playOrderChime } from '../utils/soundAlert';
-import { syncOrderToFirestore, subscribeToSingleOrder, syncStoreConfigToFirestore } from '../services/firestoreSync';
+import {
+  syncOrderToFirestore,
+  subscribeToSingleOrder,
+  syncStoreConfigToFirestore,
+  deductStockForOrder,
+} from '../services/firestoreSync';
+
+const DIAS_SEMANA_MAP = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+
+function formatPhoneBr(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
 
 interface PublicStorefrontViewProps {
   products: Product[];
@@ -313,18 +330,40 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
   });
   const [isCartOpen, setIsCartOpen] = useState(false);
 
-  // Customer personal info (remembered on device)
+  // Customer personal info (remembered on device) & automatic ?mesa=XX detection
+  const initialMesaParam =
+    typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('mesa') || '' : '';
   const [customerName, setCustomerName] = useState(() => localStorage.getItem('omni_cust_name') || '');
   const [customerPhone, setCustomerPhone] = useState(() => localStorage.getItem('omni_cust_phone') || '');
-  const [deliveryType, setDeliveryType] = useState<'delivery' | 'retirada' | 'mesa'>('delivery');
+  const [deliveryType, setDeliveryType] = useState<'delivery' | 'retirada' | 'mesa'>(
+    initialMesaParam ? 'mesa' : 'delivery'
+  );
   const [deliveryStreet, setDeliveryStreet] = useState(() => localStorage.getItem('omni_cust_street') || '');
   const [selectedNeighborhood, setSelectedNeighborhood] = useState<string>(() => {
     const saved = localStorage.getItem('omni_cust_bairro');
     if (saved) return saved;
     return '';
   });
-  const [mesaNumero, setMesaNumero] = useState('');
+  const [mesaNumero, setMesaNumero] = useState(initialMesaParam);
   const [orderNotes, setOrderNotes] = useState('');
+  const [customerToast, setCustomerToast] = useState<string | null>(null);
+
+  const showCustomerToast = (msg: string) => {
+    setCustomerToast(msg);
+    setTimeout(() => setCustomerToast(null), 2600);
+  };
+
+  const todayWeekKey = DIAS_SEMANA_MAP[new Date().getDay()];
+  const isAvailableToday = (product: Product): boolean => {
+    if (!product.disponivel) return false;
+    if (product.controlarEstoque !== false && product.estoqueAtual !== undefined && product.estoqueAtual <= 0) {
+      return false;
+    }
+    if (product.diasDisponiveis && product.diasDisponiveis.length > 0 && product.diasDisponiveis.length < 7) {
+      return product.diasDisponiveis.includes(todayWeekKey);
+    }
+    return true;
+  };
 
   // Coupons state
   const [couponInput, setCouponInput] = useState('');
@@ -403,7 +442,7 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
   });
 
   const handleOpenItem = (product: Product) => {
-    if (!product.disponivel) return;
+    if (!isAvailableToday(product)) return;
     setActiveProductModal(product);
     setModalQuantity(1);
     setItemNotes('');
@@ -446,6 +485,15 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
     if (!activeProductModal) return 0;
     let price = activeProductModal.precoPromocional || activeProductModal.preco;
 
+    // Regra oficial de Pizzaria: na Pizza Meio a Meio, prevalece o maior valor entre os 2 sabores
+    if (activeProductModal.permiteMeioAMeio && segundoSaborPizza) {
+      const secondProd = products.find((p) => p.nome === segundoSaborPizza);
+      if (secondProd) {
+        const secondPrice = secondProd.precoPromocional || secondProd.preco;
+        price = Math.max(price, secondPrice);
+      }
+    }
+
     if (activeProductModal.opcoes) {
       activeProductModal.opcoes.forEach((grp) => {
         const selectedItemIds = selectedOptions[grp.id] || [];
@@ -461,6 +509,18 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
 
   const handleAddToCart = () => {
     if (!activeProductModal) return;
+
+    // Validate stock limit if controlled
+    if (
+      activeProductModal.controlarEstoque !== false &&
+      activeProductModal.estoqueAtual !== undefined &&
+      modalQuantity > activeProductModal.estoqueAtual
+    ) {
+      setOptionValidationError(
+        `Temos apenas ${activeProductModal.estoqueAtual} unidade(s) disponíveis em estoque no momento.`
+      );
+      return;
+    }
 
     // Validate mandatory and min/max option groups
     if (activeProductModal.opcoes) {
@@ -507,7 +567,20 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
     };
 
     setCart([...cart, newItem]);
+    showCustomerToast(`${modalQuantity}x ${activeProductModal.nome} adicionado à sacola!`);
     setActiveProductModal(null);
+  };
+
+  const handleRepeatLastOrder = () => {
+    if (!activeOrder || !activeOrder.itens || activeOrder.itens.length === 0) return;
+    setCart(
+      activeOrder.itens.map((it, idx) => ({
+        ...it,
+        id: `cart_repeat_${Date.now()}_${idx}`,
+      }))
+    );
+    setIsCartOpen(true);
+    showCustomerToast('Itens do seu último pedido adicionados à sacola!');
   };
 
   const updateCartQty = (index: number, delta: number) => {
@@ -584,6 +657,7 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
     );
     if (existingIndex >= 0) {
       updateCartQty(existingIndex, 1);
+      showCustomerToast(`+1 ${product.nome} na sacola!`);
       return;
     }
     const newItem: CartItem = {
@@ -594,6 +668,7 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
       subtotal: unitPrice,
     };
     setCart([...cart, newItem]);
+    showCustomerToast(`${product.nome} adicionado à sacola!`);
   };
 
   // Find active neighborhood object for dynamic delivery fee & estimated time
@@ -760,13 +835,22 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
       setCheckoutError('Por favor, informe seu nome para identificarmos seu pedido.');
       return;
     }
-    if (!customerPhone.trim()) {
-      setCheckoutError('Por favor, informe seu telefone/WhatsApp para contato.');
+    if (!customerPhone.trim() || customerPhone.replace(/\D/g, '').length < 10) {
+      setCheckoutError('Por favor, informe um número de WhatsApp válido com DDD.');
       return;
     }
     if (deliveryType === 'delivery' && !deliveryStreet.trim()) {
       setCheckoutError('Por favor, informe o endereço completo (Rua e Número) para entrega.');
       return;
+    }
+    if (paymentMethod === 'Dinheiro' && trocoPara.trim()) {
+      const trocoNum = parseFloat(trocoPara.replace(',', '.'));
+      if (!isNaN(trocoNum) && trocoNum > 0 && trocoNum < cartTotal) {
+        setCheckoutError(
+          `O valor para troco (R$ ${trocoNum.toFixed(2).replace('.', ',')}) deve ser maior ou igual ao total do pedido (R$ ${cartTotal.toFixed(2).replace('.', ',')}).`
+        );
+        return;
+      }
     }
 
     // Save customer info locally for next orders
@@ -815,6 +899,9 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
     syncOrderToFirestore(newOrder, effectiveStoreId).catch((err) => {
       console.warn('Erro ao gravar pedido no Firestore:', err);
     });
+
+    // Deduct stock automatically
+    deductStockForOrder(newOrder, products, effectiveStoreId).catch(() => {});
 
     // 2. Also update local storage and dispatch local event isolated by storeId
     try {
@@ -978,6 +1065,54 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
 
       {/* Main Storefront Container */}
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-5 pb-28 space-y-5">
+        {/* Early Closed Store Warning Banner */}
+        {!storeConfig.aberto && (
+          <div className="p-4 rounded-2xl bg-red-500/15 border border-red-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2.5 text-red-400 font-bold">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <div>
+                <p className="text-sm font-black">Estabelecimento fechado para pedidos no momento</p>
+                <p className="text-xs opacity-90">
+                  Você pode navegar pelo cardápio! Horário de funcionamento: {storeConfig.horarioFuncionamento}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Table QR Code Banner or Repeat Last Order Quick Bar */}
+        {(initialMesaParam || (activeOrder && activeOrder.itens?.length > 0)) && (
+          <div
+            className={`p-3 rounded-2xl border flex flex-wrap items-center justify-between gap-2 text-xs ${
+              isDark ? 'bg-neutral-900/90 border-neutral-800' : 'bg-white border-neutral-200 shadow-xs'
+            }`}
+          >
+            {initialMesaParam ? (
+              <div className="flex items-center gap-2 font-bold text-orange-400">
+                <Utensils className="w-4 h-4" />
+                <span>Atendimento Presencial Identificado: Mesa {mesaNumero || initialMesaParam}</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-neutral-400">
+                <Clock className="w-4 h-4 text-orange-500" />
+                <span>
+                  Último pedido: <strong className={isDark ? 'text-white' : 'text-neutral-900'}>#{activeOrder?.numero}</strong>
+                </span>
+              </div>
+            )}
+            {activeOrder && activeOrder.itens?.length > 0 && (
+              <button
+                type="button"
+                onClick={handleRepeatLastOrder}
+                className="px-3 py-1.5 rounded-xl bg-orange-500/15 hover:bg-orange-500/25 text-orange-400 border border-orange-500/30 font-black flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Repetir Meu Último Pedido</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Welcome Notice / Pix Promo & Customer Reviews Bar */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
           <div
@@ -1131,16 +1266,37 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
             {filteredProducts.map((product) => {
               const effectivePrice = product.precoPromocional || product.preco;
+              const availableNow = isAvailableToday(product);
+              const inCartCount = cart
+                .filter((c) => c.produto.id === product.id)
+                .reduce((acc, c) => acc + c.quantidade, 0);
+              const isDayRestricted =
+                product.disponivel &&
+                product.diasDisponiveis &&
+                product.diasDisponiveis.length > 0 &&
+                product.diasDisponiveis.length < 7 &&
+                !product.diasDisponiveis.includes(todayWeekKey);
+              const isLowStock =
+                availableNow &&
+                product.controlarEstoque !== false &&
+                product.estoqueAtual !== undefined &&
+                product.estoqueAtual > 0 &&
+                product.estoqueAtual <= (product.estoqueMinimo ?? 5);
+
               return (
                 <div
                   key={product.id}
                   onClick={() => handleOpenItem(product)}
                   className={`p-3.5 rounded-2xl border flex gap-3.5 transition ${
-                    isDark
+                    inCartCount > 0
+                      ? isDark
+                        ? 'bg-neutral-900 border-orange-500/50'
+                        : 'bg-white border-orange-400 shadow-xs'
+                      : isDark
                       ? 'bg-neutral-900 border-neutral-800/90 hover:border-neutral-700'
                       : 'bg-white border-neutral-200/90 hover:border-neutral-300 shadow-xs'
                   } ${
-                    product.disponivel
+                    availableNow
                       ? 'cursor-pointer active:scale-[0.99]'
                       : 'opacity-50 cursor-not-allowed'
                   }`}
@@ -1148,6 +1304,11 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
                   <div className="flex-1 min-w-0 flex flex-col justify-between">
                     <div>
                       <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                        {inCartCount > 0 && (
+                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-500 text-neutral-950">
+                            {inCartCount}x na sacola
+                          </span>
+                        )}
                         {product.destaque && (
                           <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-400 border border-amber-500/30">
                             ⭐ Destaque
@@ -1156,6 +1317,11 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
                         {product.selo && (
                           <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-orange-500/15 text-orange-400">
                             {product.selo}
+                          </span>
+                        )}
+                        {isLowStock && (
+                          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-400">
+                            Restam {product.estoqueAtual}
                           </span>
                         )}
                       </div>
@@ -1190,17 +1356,17 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
 
                     <div className="mt-3 flex items-center justify-between">
                       <div className="flex items-baseline gap-2">
-                        <span className="text-sm sm:text-base font-black text-emerald-500">
+                        <span className="text-sm sm:text-base font-black text-emerald-500 font-mono tabular-nums">
                           R$ {effectivePrice.toFixed(2).replace('.', ',')}
                         </span>
                         {product.precoPromocional && product.precoPromocional < product.preco && (
-                          <span className="text-xs line-through text-neutral-500">
+                          <span className="text-xs line-through text-neutral-500 font-mono tabular-nums">
                             R$ {product.preco.toFixed(2).replace('.', ',')}
                           </span>
                         )}
                       </div>
 
-                      {product.disponivel ? (
+                      {availableNow ? (
                         <span
                           className="text-xs font-bold px-2.5 py-1 rounded-lg flex items-center gap-1"
                           style={{
@@ -1208,7 +1374,11 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
                             color: primaryColor,
                           }}
                         >
-                          <Plus className="w-3.5 h-3.5" /> Adicionar
+                          <Plus className="w-3.5 h-3.5" /> {inCartCount > 0 ? 'Mais' : 'Adicionar'}
+                        </span>
+                      ) : isDayRestricted ? (
+                        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 flex items-center gap-1">
+                          <Calendar className="w-3 h-3" /> {product.diasDisponiveis?.join(', ')}
                         </span>
                       ) : (
                         <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-red-500/20 text-red-400">
@@ -1339,12 +1509,18 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
                   >
                     <option value="">Não, quero inteira de {activeProductModal.nome}</option>
                     {products
-                      .filter((p) => p.disponivel && p.id !== activeProductModal.id && p.permiteMeioAMeio)
-                      .map((p) => (
-                        <option key={p.id} value={p.nome}>
-                          1/2 {activeProductModal.nome} + 1/2 {p.nome}
-                        </option>
-                      ))}
+                      .filter((p) => isAvailableToday(p) && p.id !== activeProductModal.id && p.permiteMeioAMeio)
+                      .map((p) => {
+                        const firstP = activeProductModal.precoPromocional || activeProductModal.preco;
+                        const secondP = p.precoPromocional || p.preco;
+                        const finalHalfPrice = Math.max(firstP, secondP);
+                        return (
+                          <option key={p.id} value={p.nome}>
+                            1/2 {activeProductModal.nome} + 1/2 {p.nome} (R${' '}
+                            {finalHalfPrice.toFixed(2).replace('.', ',')})
+                          </option>
+                        );
+                      })}
                   </select>
                 </div>
               )}
@@ -1645,7 +1821,7 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
                       <input
                         type="tel"
                         value={customerPhone}
-                        onChange={(e) => setCustomerPhone(e.target.value)}
+                        onChange={(e) => setCustomerPhone(formatPhoneBr(e.target.value))}
                         placeholder="Ex: (65) 99999-9999"
                         className={`w-full pl-8 pr-3 py-2 rounded-xl border outline-none ${
                           isDark ? 'bg-neutral-950 border-neutral-800 text-white' : 'bg-white border-neutral-300 text-neutral-900'
@@ -1909,7 +2085,7 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
                 )}
 
                 {paymentMethod === 'Dinheiro' && (
-                  <div>
+                  <div className="space-y-1">
                     <label className="block font-bold mb-1">Precisa de troco para quanto?</label>
                     <input
                       type="text"
@@ -1920,6 +2096,22 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
                         isDark ? 'bg-neutral-950 border-neutral-800 text-white' : 'bg-white border-neutral-300 text-neutral-900'
                       }`}
                     />
+                    {(() => {
+                      const tVal = parseFloat(trocoPara.replace(',', '.'));
+                      if (!trocoPara.trim() || isNaN(tVal) || tVal <= 0) return null;
+                      if (tVal < cartTotal) {
+                        return (
+                          <p className="text-[11px] font-bold text-red-400">
+                            Informe um valor maior ou igual a R$ {cartTotal.toFixed(2).replace('.', ',')}
+                          </p>
+                        );
+                      }
+                      return (
+                        <p className="text-[11px] font-bold text-emerald-400">
+                          Troco a receber na entrega: R$ {(tVal - cartTotal).toFixed(2).replace('.', ',')}
+                        </p>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -2272,6 +2464,14 @@ export const PublicStorefrontView: React.FC<PublicStorefrontViewProps> = ({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* CUSTOMER FLOATING TOAST FEEDBACK */}
+      {customerToast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-emerald-600 text-white shadow-2xl text-xs font-black flex items-center gap-2 animate-in fade-in duration-150">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>{customerToast}</span>
         </div>
       )}
     </div>

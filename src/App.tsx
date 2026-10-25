@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { 
   Search, 
   Grid, 
@@ -18,26 +18,41 @@ import { PRODUTOS_PRESETS_SEGMENTO, SEGMENTOS_DISPONIVEIS, CATEGORIAS_POR_SEGMEN
 import { Header, AppTab } from './components/Header';
 import { ProductCard } from './components/ProductCard';
 import { ProductModal } from './components/ProductModal';
-import { CustomerSimulator } from './components/CustomerSimulator';
-import { DiagnosticView } from './components/DiagnosticView';
 import { DailyChecklistModal } from './components/DailyChecklistModal';
 import { BatchPriceModal } from './components/BatchPriceModal';
 import { ExportModal } from './components/ExportModal';
 import { SegmentSelectorModal } from './components/SegmentSelectorModal';
 import { PaymentSettingsModal } from './components/PaymentSettingsModal';
-import { StoreSettingsView } from './components/StoreSettingsView';
-import { LoyaltyCouponsView } from './components/LoyaltyCouponsView';
-import { ProductionDeployGuide } from './components/ProductionDeployGuide';
 import { KitchenReceiptModal } from './components/KitchenReceiptModal';
-import { ReportsView } from './components/ReportsView';
 import { OrdersKdsView } from './components/OrdersKdsView';
 import { InventoryView } from './components/InventoryView';
-import { CustomizationView } from './components/CustomizationView';
 import { ClientOnboardingModal } from './components/ClientOnboardingModal';
 import { AdminTeamModal } from './components/AdminTeamModal';
 import { PublicStorefrontView } from './components/PublicStorefrontView';
 import { StoreManagerOperationView } from './components/StoreManagerOperationView';
 import { ExclusiveMenuLinkModal, buildExclusiveMenuUrl, sanitizeMenuSlug } from './components/ExclusiveMenuLinkModal';
+
+const CustomerSimulator = React.lazy(() =>
+  import('./components/CustomerSimulator').then((m) => ({ default: m.CustomerSimulator }))
+);
+const DiagnosticView = React.lazy(() =>
+  import('./components/DiagnosticView').then((m) => ({ default: m.DiagnosticView }))
+);
+const StoreSettingsView = React.lazy(() =>
+  import('./components/StoreSettingsView').then((m) => ({ default: m.StoreSettingsView }))
+);
+const LoyaltyCouponsView = React.lazy(() =>
+  import('./components/LoyaltyCouponsView').then((m) => ({ default: m.LoyaltyCouponsView }))
+);
+const ProductionDeployGuide = React.lazy(() =>
+  import('./components/ProductionDeployGuide').then((m) => ({ default: m.ProductionDeployGuide }))
+);
+const ReportsView = React.lazy(() =>
+  import('./components/ReportsView').then((m) => ({ default: m.ReportsView }))
+);
+const CustomizationView = React.lazy(() =>
+  import('./components/CustomizationView').then((m) => ({ default: m.CustomizationView }))
+);
 import { useTheme } from './context/ThemeContext';
 import { useAuth } from './context/AuthContext';
 import { doc, setDoc } from 'firebase/firestore';
@@ -415,10 +430,10 @@ export default function App() {
     let updated: Product[];
     if (exists) {
       updated = products.map((p) => (p.id === product.id ? product : p));
-      showToast(`"${product.nome}" atualizado e sincronizado no Firestore!`);
+      showToast(`"${product.nome}" atualizado no cardápio digital!`);
     } else {
       updated = [product, ...products];
-      showToast(`Novo item "${product.nome}" salvo no Firestore!`);
+      showToast(`Novo item "${product.nome}" cadastrado no cardápio!`);
     }
     saveSingleProductMutation(updated, product);
   };
@@ -673,7 +688,17 @@ export default function App() {
             }}
             onOpenKds={() => setActiveTab('pedidos')}
             onOpenChecklist={() => setIsChecklistOpen(true)}
-            onOpenKitchenReceipt={() => setIsKitchenReceiptOpen(true)}
+            onOpenKitchenReceipt={(cartItems, name, addr, pay) => {
+              if (cartItems && cartItems.length > 0) {
+                setKitchenReceiptData({
+                  cartItems,
+                  customerName: name || 'Cliente Balcão',
+                  customerAddress: addr || 'Balcão',
+                  paymentMethod: pay || 'PIX',
+                });
+              }
+              setIsKitchenReceiptOpen(true);
+            }}
             onOpenPublicStorefront={() => {
               setOpenedFromAdmin(true);
               setIsPublicStorefront(true);
@@ -1034,8 +1059,12 @@ export default function App() {
                               Duplicar
                             </button>
                             <button
-                              onClick={() => handleDeleteProduct(p.id)}
-                              className="px-2.5 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 rounded font-semibold transition"
+                              onClick={() => {
+                                if (window.confirm(`Deseja realmente excluir "${p.nome}" do cardápio?`)) {
+                                  handleDeleteProduct(p.id);
+                                }
+                              }}
+                              className="px-2.5 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 rounded font-semibold transition cursor-pointer"
                             >
                               Excluir
                             </button>
@@ -1056,6 +1085,7 @@ export default function App() {
             storeId={activeStoreId}
             storeConfig={storeConfig}
             products={products}
+            onProductsUpdated={(updated) => setProducts(updated)}
             onOpenKitchenReceipt={(cartItems, name, addr, pay) => {
               setKitchenReceiptData({
                 cartItems,
@@ -1072,100 +1102,110 @@ export default function App() {
         {/* DEP 3: ESTOQUE & INSUMOS */}
         {activeTab === 'estoque' && (
           <InventoryView
+            storeId={activeStoreId}
             products={products}
             onToggleDisponivel={handleToggleDisponivel}
+            onUpdateProduct={handleSaveProduct}
             showToast={showToast}
           />
         )}
 
-        {/* DEP 4: FINANCEIRO, DRE AUTOMÁTICO & CURVA ABC */}
-        {(activeTab === 'financeiro' || activeTab === 'relatorios') && (
-          <ReportsView
-            storeId={activeStoreId}
-            products={products}
-            storeConfig={storeConfig}
-            onSaveConfig={saveStoreConfig}
-            showToast={showToast}
-          />
-        )}
+        <Suspense
+          fallback={
+            <div className={`py-16 text-center rounded-2xl border ${cardSurface}`}>
+              <p className="text-sm font-bold text-orange-500 animate-pulse">Carregando módulo...</p>
+            </div>
+          }
+        >
+          {/* DEP 4: FINANCEIRO, DRE AUTOMÁTICO & CURVA ABC */}
+          {(activeTab === 'financeiro' || activeTab === 'relatorios') && (
+            <ReportsView
+              storeId={activeStoreId}
+              products={products}
+              storeConfig={storeConfig}
+              onSaveConfig={saveStoreConfig}
+              showToast={showToast}
+            />
+          )}
 
-        {/* DEP 5: CUSTOMIZAÇÃO DE CORES & IDENTIDADE VISUAL */}
-        {activeTab === 'customizacao' && (
-          <CustomizationView
-            storeConfig={storeConfig}
-            onSaveConfig={saveStoreConfig}
-            showToast={showToast}
-            onOpenSimulator={() => setActiveTab('simulador')}
-          />
-        )}
+          {/* DEP 5: CUSTOMIZAÇÃO DE CORES & IDENTIDADE VISUAL */}
+          {activeTab === 'customizacao' && (
+            <CustomizationView
+              storeConfig={storeConfig}
+              onSaveConfig={saveStoreConfig}
+              showToast={showToast}
+              onOpenSimulator={() => setActiveTab('simulador')}
+            />
+          )}
 
-        {/* DEP 6: DADOS DA LOJA, HORÁRIOS & FRETE POR BAIRRO */}
-        {activeTab === 'loja' && (
-          <StoreSettingsView
-            storeConfig={storeConfig}
-            onSaveConfig={saveStoreConfig}
-            showToast={showToast}
-          />
-        )}
+          {/* DEP 6: DADOS DA LOJA, HORÁRIOS & FRETE POR BAIRRO */}
+          {activeTab === 'loja' && (
+            <StoreSettingsView
+              storeConfig={storeConfig}
+              onSaveConfig={saveStoreConfig}
+              showToast={showToast}
+            />
+          )}
 
-        {/* CRM DE CLIENTES INATIVOS, PROGRAMA DE FIDELIDADE & CUPONS */}
-        {activeTab === 'fidelidade' && (
-          <LoyaltyCouponsView
-            storeId={activeStoreId}
-            products={products}
-            storeConfig={storeConfig}
-            onSaveConfig={saveStoreConfig}
-            showToast={showToast}
-          />
-        )}
+          {/* CRM DE CLIENTES INATIVOS, PROGRAMA DE FIDELIDADE & CUPONS */}
+          {activeTab === 'fidelidade' && (
+            <LoyaltyCouponsView
+              storeId={activeStoreId}
+              products={products}
+              storeConfig={storeConfig}
+              onSaveConfig={saveStoreConfig}
+              showToast={showToast}
+            />
+          )}
 
-        {/* DEP 7: SIMULADOR DO CLIENTE (LIVE DELIVERY WEB APP) */}
-        {activeTab === 'simulador' && (
-          <CustomerSimulator
-            products={products}
-            storeConfig={storeConfig}
-          />
-        )}
+          {/* DEP 7: SIMULADOR DO CLIENTE (LIVE DELIVERY WEB APP) */}
+          {activeTab === 'simulador' && (
+            <CustomerSimulator
+              products={products}
+              storeConfig={storeConfig}
+            />
+          )}
 
-        {/* DEP 8: GUIA COMPLETO PARA COLOCAR EM PRODUÇÃO */}
-        {activeTab === 'producao' && (
-          <ProductionDeployGuide
-            storeConfig={storeConfig}
-            productsCount={products.length}
-            onOpenExport={() => setIsExportOpen(true)}
-            onOpenOnboarding={() => setIsOnboardingOpen(true)}
-            onOpenTeamModal={() => setIsTeamModalOpen(true)}
-            onOpenPublicStorefront={() => {
-              setOpenedFromAdmin(true);
-              setIsPublicStorefront(true);
-            }}
-            onOpenKdsMode={() => setActiveTab('pedidos')}
-            onToggleStoreOpen={() => {
-              const updated: StoreConfig = {
-                ...storeConfig,
-                aberto: !storeConfig.aberto,
-              };
-              saveStoreConfig(updated);
-              showToast(
-                updated.aberto
-                  ? '🟢 Loja ABERTA para receber pedidos reais na nuvem!'
-                  : '🔴 Loja FECHADA temporariamente para novos pedidos.'
-              );
-            }}
-            onForceSyncCloud={handleForceSyncCloud}
-            onClearDemoOrders={handleClearDemoOrders}
-          />
-        )}
+          {/* DEP 8: GUIA COMPLETO PARA COLOCAR EM PRODUÇÃO */}
+          {activeTab === 'producao' && (
+            <ProductionDeployGuide
+              storeConfig={storeConfig}
+              productsCount={products.length}
+              onOpenExport={() => setIsExportOpen(true)}
+              onOpenOnboarding={() => setIsOnboardingOpen(true)}
+              onOpenTeamModal={() => setIsTeamModalOpen(true)}
+              onOpenPublicStorefront={() => {
+                setOpenedFromAdmin(true);
+                setIsPublicStorefront(true);
+              }}
+              onOpenKdsMode={() => setActiveTab('pedidos')}
+              onToggleStoreOpen={() => {
+                const updated: StoreConfig = {
+                  ...storeConfig,
+                  aberto: !storeConfig.aberto,
+                };
+                saveStoreConfig(updated);
+                showToast(
+                  updated.aberto
+                    ? '🟢 Loja ABERTA para receber pedidos reais na nuvem!'
+                    : '🔴 Loja FECHADA temporariamente para novos pedidos.'
+                );
+              }}
+              onForceSyncCloud={handleForceSyncCloud}
+              onClearDemoOrders={handleClearDemoOrders}
+            />
+          )}
 
-        {/* DIAGNÓSTICO & ESCALABILIDADE COMERCIAL */}
-        {activeTab === 'diagnostico' && (
-          <DiagnosticView
-            products={products}
-            storeConfig={storeConfig}
-            onOpenExport={() => setIsExportOpen(true)}
-            onOpenSegmentModal={() => setIsSegmentModalOpen(true)}
-          />
-        )}
+          {/* DIAGNÓSTICO & ESCALABILIDADE COMERCIAL */}
+          {activeTab === 'diagnostico' && (
+            <DiagnosticView
+              products={products}
+              storeConfig={storeConfig}
+              onOpenExport={() => setIsExportOpen(true)}
+              onOpenSegmentModal={() => setIsSegmentModalOpen(true)}
+            />
+          )}
+        </Suspense>
       </main>
 
       {/* FOOTER */}

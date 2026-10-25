@@ -8,6 +8,7 @@ import {
   writeBatch,
   onSnapshot,
   query,
+  where,
   limit,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
@@ -147,6 +148,9 @@ function sanitizeProductForFirestore(product: Product, storeId: string = 'defaul
     porcaoPessoas: product.porcaoPessoas ? String(product.porcaoPessoas).slice(0, 60) : '',
     alergenos: Array.isArray(product.alergenos) ? product.alergenos.slice(0, 15) : [],
     diasDisponiveis: Array.isArray(product.diasDisponiveis) ? product.diasDisponiveis.slice(0, 7) : [],
+    controlarEstoque: product.controlarEstoque !== undefined ? Boolean(product.controlarEstoque) : true,
+    estoqueAtual: product.estoqueAtual !== undefined ? Math.max(0, Number(product.estoqueAtual)) : null,
+    estoqueMinimo: product.estoqueMinimo !== undefined ? Math.max(0, Number(product.estoqueMinimo)) : 5,
     opcoes: product.opcoes || [],
     permiteMeioAMeio: Boolean(product.permiteMeioAMeio),
     tamanhosPreco: product.tamanhosPreco || null,
@@ -177,6 +181,9 @@ export function parseFirestoreProduct(data: any): Product {
     porcaoPessoas: data.porcaoPessoas || undefined,
     alergenos: Array.isArray(data.alergenos) ? data.alergenos : undefined,
     diasDisponiveis: Array.isArray(data.diasDisponiveis) ? data.diasDisponiveis : undefined,
+    controlarEstoque: data.controlarEstoque !== undefined ? Boolean(data.controlarEstoque) : true,
+    estoqueAtual: data.estoqueAtual !== null && data.estoqueAtual !== undefined ? Number(data.estoqueAtual) : undefined,
+    estoqueMinimo: data.estoqueMinimo !== null && data.estoqueMinimo !== undefined ? Number(data.estoqueMinimo) : 5,
     opcoes: Array.isArray(data.opcoes) ? data.opcoes : [],
     permiteMeioAMeio: Boolean(data.permiteMeioAMeio),
     tamanhosPreco: data.tamanhosPreco || undefined,
@@ -194,7 +201,10 @@ export function subscribeToOrders(
   const targetStoreId = sanitizeStoreId(storeId);
   try {
     const ordersCol = collection(db, ORDERS_COLLECTION);
-    const q = query(ordersCol, limit(150));
+    const q =
+      targetStoreId === 'default'
+        ? query(ordersCol, limit(250))
+        : query(ordersCol, where('storeId', '==', targetStoreId), limit(200));
 
     const unsubscribe = onSnapshot(
       q,
@@ -387,8 +397,12 @@ export function subscribeToProducts(
   const targetStoreId = sanitizeStoreId(storeId);
   try {
     const productsCol = collection(db, PRODUCTS_COLLECTION);
+    const q =
+      targetStoreId === 'default'
+        ? query(productsCol)
+        : query(productsCol, where('storeId', '==', targetStoreId));
     const unsubscribe = onSnapshot(
-      productsCol,
+      q,
       (snapshot) => {
         const loaded: Product[] = [];
         snapshot.forEach((docSnap) => {
@@ -471,4 +485,86 @@ export async function syncProductsBatchToFirestore(
     handleFirestoreError(error, OperationType.WRITE, PRODUCTS_COLLECTION);
   }
 }
+
+// 4. AUTOMATIC STOCK DEDUCTION ON ORDER PLACEMENT
+export async function deductStockForOrder(
+  order: Order,
+  products: Product[],
+  storeId: string = 'default'
+): Promise<Product[]> {
+  const targetStoreId = sanitizeStoreId(storeId || order.storeId || 'default');
+  const qtyByProductId = new Map<string, number>();
+  const qtyByProductName = new Map<string, number>();
+
+  (order.itens || []).forEach((item) => {
+    const qty = Math.max(1, Number(item.quantidade) || 1);
+    if (item.produto?.id) {
+      qtyByProductId.set(item.produto.id, (qtyByProductId.get(item.produto.id) || 0) + qty);
+    }
+    if (item.produto?.nome) {
+      const k = item.produto.nome.trim().toLowerCase();
+      qtyByProductName.set(k, (qtyByProductName.get(k) || 0) + qty);
+    }
+  });
+
+  const changedProducts: Product[] = [];
+  const updatedList = products.map((prod) => {
+    const orderedQty =
+      qtyByProductId.get(prod.id) ||
+      qtyByProductName.get((prod.nome || '').trim().toLowerCase()) ||
+      0;
+
+    if (orderedQty <= 0) return prod;
+    if (prod.controlarEstoque === false || prod.estoqueAtual === undefined || prod.estoqueAtual === null) {
+      return prod;
+    }
+
+    const nextStock = Math.max(0, Number(prod.estoqueAtual) - orderedQty);
+    const nextDisponivel = nextStock === 0 ? false : prod.disponivel;
+    const updatedProd: Product = {
+      ...prod,
+      estoqueAtual: nextStock,
+      disponivel: nextDisponivel,
+      atualizadoEm: new Date().toISOString(),
+    };
+    changedProducts.push(updatedProd);
+    return updatedProd;
+  });
+
+  if (changedProducts.length > 0) {
+    try {
+      localStorage.setItem(`omni_delivery_products_${targetStoreId}`, JSON.stringify(updatedList));
+      if (targetStoreId === 'default') {
+        localStorage.setItem('omni_delivery_products', JSON.stringify(updatedList));
+      }
+      // Also keep legacy stock map synced
+      const stockKey = `omni_inventory_stock_${targetStoreId}`;
+      const existingStockRaw = localStorage.getItem(stockKey) || localStorage.getItem('omni_inventory_stock');
+      const stockMap = existingStockRaw ? JSON.parse(existingStockRaw) : {};
+      changedProducts.forEach((cp) => {
+        stockMap[cp.id] = {
+          qtd: cp.estoqueAtual ?? 0,
+          min: cp.estoqueMinimo ?? 5,
+          unidade: cp.unidadeMedida || 'unidade',
+        };
+      });
+      localStorage.setItem(stockKey, JSON.stringify(stockMap));
+    } catch {}
+
+    // Update stock fields in Firestore
+    for (const cp of changedProducts) {
+      const safeId = makeScopedProductId(cp.id, targetStoreId);
+      try {
+        await updateDoc(doc(db, PRODUCTS_COLLECTION, safeId), {
+          estoqueAtual: cp.estoqueAtual ?? 0,
+          disponivel: cp.disponivel,
+          atualizadoEm: new Date().toISOString(),
+        });
+      } catch {}
+    }
+  }
+
+  return updatedList;
+}
+
 

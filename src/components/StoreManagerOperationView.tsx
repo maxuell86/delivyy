@@ -19,12 +19,14 @@ import {
   Utensils,
   QrCode,
   Share2,
+  Bell,
+  Boxes,
 } from 'lucide-react';
-import { Product, StoreConfig, Order, CategoryId, CategoryInfo } from '../types';
+import { Product, StoreConfig, Order, CategoryId, CategoryInfo, CartItem } from '../types';
 import { CATEGORIAS_POR_SEGMENTO } from '../data/segmentData';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { subscribeToOrders } from '../services/firestoreSync';
+import { subscribeToOrders, updateOrderStatusInFirestore } from '../services/firestoreSync';
 import { buildExclusiveMenuUrl } from './ExclusiveMenuLinkModal';
 
 interface StoreManagerOperationViewProps {
@@ -37,7 +39,7 @@ interface StoreManagerOperationViewProps {
   onEditProduct: (product: Product) => void;
   onOpenKds: () => void;
   onOpenChecklist: () => void;
-  onOpenKitchenReceipt: () => void;
+  onOpenKitchenReceipt: (cartItems?: CartItem[], customerName?: string, customerAddress?: string, paymentMethod?: string) => void;
   onOpenPublicStorefront: () => void;
   onOpenExclusiveLinkModal?: () => void;
   showToast: (msg: string) => void;
@@ -148,6 +150,18 @@ export const StoreManagerOperationView: React.FC<StoreManagerOperationViewProps>
 
   const produtosDisponiveis = products.filter((p) => p.disponivel).length;
   const produtosPausados = products.length - produtosDisponiveis;
+  const produtosEstoqueCritico = products.filter(
+    (p) => p.controlarEstoque !== false && p.estoqueAtual !== undefined && p.estoqueAtual > 0 && p.estoqueAtual <= (p.estoqueMinimo ?? 5)
+  );
+  const listaPedidosNovos = liveOrders.filter((o) => o.status === 'recebido');
+
+  const handleQuickAcceptOrder = async (order: Order) => {
+    setLiveOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status: 'preparo' } : o)));
+    try {
+      await updateOrderStatusInFirestore(order.id, 'preparo');
+    } catch {}
+    showToast(`Pedido #${order.numero} (${order.clienteNome}) aceito e enviado para a Cozinha!`);
+  };
 
   const filteredQuickProducts = products.filter((p) => {
     const matchCat = selectedCat === 'todos' || p.categoria === selectedCat;
@@ -276,7 +290,7 @@ export const StoreManagerOperationView: React.FC<StoreManagerOperationViewProps>
             </button>
 
             <button
-              onClick={onOpenKitchenReceipt}
+              onClick={() => onOpenKitchenReceipt()}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap ${subtleSurfaceClass}`}
             >
               <Printer className="w-4 h-4 text-orange-500" />
@@ -428,6 +442,106 @@ export const StoreManagerOperationView: React.FC<StoreManagerOperationViewProps>
           </div>
         </div>
       </div>
+
+      {/* FILA RÁPIDA DE ACEITE DE PEDIDOS NOVOS (1-CLIQUE) */}
+      {listaPedidosNovos.length > 0 && (
+        <div
+          className={`border-2 border-amber-500/40 rounded-2xl p-5 space-y-3.5 ${
+            isDark ? 'bg-amber-500/5 text-white' : 'bg-amber-50/70 text-neutral-900'
+          }`}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <span className="w-8 h-8 rounded-xl bg-amber-500 text-neutral-950 flex items-center justify-center animate-bounce">
+                <Bell className="w-4 h-4" />
+              </span>
+              <div>
+                <h3 className="text-sm sm:text-base font-black">
+                  {listaPedidosNovos.length}{' '}
+                  {listaPedidosNovos.length === 1
+                    ? 'Novo Pedido Aguardando Aceite!'
+                    : 'Novos Pedidos Aguardando Aceite!'}
+                </h3>
+                <p className={`text-xs ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
+                  Aceite e envie para a cozinha com 1 clique diretamente daqui ou abra o KDS completo.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onOpenKds}
+              className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-black transition cursor-pointer self-start sm:self-auto"
+            >
+              Ver Painel KDS Completo
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {listaPedidosNovos.slice(0, 6).map((order) => (
+              <div
+                key={order.id}
+                className={`p-3.5 rounded-xl border flex flex-col justify-between gap-3 ${surfaceClass}`}
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono font-black text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-500">
+                      #{order.numero} • {order.tipoEntrega === 'delivery' ? 'Delivery' : order.tipoEntrega === 'mesa' ? `Mesa ${order.mesa || ''}` : 'Balcão'}
+                    </span>
+                    <span className="text-xs font-black text-emerald-500 font-mono tabular-nums">
+                      R$ {order.total.toFixed(2).replace('.', ',')}
+                    </span>
+                  </div>
+                  <p className="text-sm font-bold truncate">{order.clienteNome}</p>
+                  <p className="text-[11px] text-neutral-400 line-clamp-2">
+                    {order.itens.map((it) => `${it.quantidade}x ${it.produto.nome}`).join(', ')}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2 border-t border-neutral-800/40">
+                  <button
+                    onClick={() => handleQuickAcceptOrder(order)}
+                    className="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <ChefHat className="w-3.5 h-3.5" />
+                    <span>Aceitar &amp; Preparar</span>
+                  </button>
+                  <button
+                    onClick={() =>
+                      onOpenKitchenReceipt(
+                        order.itens,
+                        order.clienteNome,
+                        order.endereco || 'Balcão',
+                        order.formaPagamento
+                      )
+                    }
+                    className={`p-2 rounded-lg border transition cursor-pointer ${subtleSurfaceClass}`}
+                    title="Imprimir comanda deste pedido"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-orange-500" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ALERTA DE ESTOQUE CRÍTICO SE HOUVER */}
+      {produtosEstoqueCritico.length > 0 && (
+        <div
+          className={`border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
+            isDark ? 'bg-neutral-900/90 text-neutral-200' : 'bg-amber-50/60 text-neutral-800'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <Boxes className="w-4 h-4 text-amber-500 shrink-0" />
+            <span>
+              <strong>Atenção de Estoque:</strong>{' '}
+              {produtosEstoqueCritico.map((p) => `${p.nome} (${p.estoqueAtual} un.)`).join(', ')}{' '}
+              estão com estoque baixo.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* CENTRAL DE PAUSA RÁPIDA DE PRODUTOS (CONTROLE DE ESGOTADOS EM 1 CLIQUE) */}
       <div className={`border rounded-2xl p-5 sm:p-6 space-y-4 ${surfaceClass}`}>

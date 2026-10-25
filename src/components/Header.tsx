@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Store,
   CheckCircle2,
@@ -28,9 +28,10 @@ import {
   Lock,
   Power,
 } from 'lucide-react';
-import { StoreConfig, Product, SegmentConfig, ViewPerspective } from '../types';
+import { StoreConfig, Product, SegmentConfig, ViewPerspective, Order } from '../types';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import { subscribeToOrders } from '../services/firestoreSync';
 
 export type AppTab =
   | 'operacao'
@@ -99,6 +100,20 @@ export const Header: React.FC<HeaderProps> = ({
   const totalProdutos = products.length;
   const disponiveis = products.filter((p) => p.disponivel).length;
   const esgotados = totalProdutos - disponiveis;
+
+  const [liveOrders, setLiveOrders] = useState<Order[]>([]);
+  useEffect(() => {
+    const targetId = activeStoreId || storeConfig.id || 'default';
+    const unsubscribe = subscribeToOrders(
+      (orders) => setLiveOrders(orders),
+      undefined,
+      targetId
+    );
+    return () => unsubscribe();
+  }, [activeStoreId, storeConfig.id]);
+
+  const novosPedidosCount = liveOrders.filter((o) => o.status === 'recebido').length;
+  const preparoPedidosCount = liveOrders.filter((o) => o.status === 'preparo').length;
 
   const isPlatformView = isSuperAdmin && viewPerspective === 'platform_admin';
 
@@ -457,6 +472,15 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <ChefHat className="w-3.5 h-3.5 text-amber-500" />
             <span>Pedidos &amp; Cozinha (KDS)</span>
+            {novosPedidosCount > 0 ? (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-neutral-950 animate-pulse">
+                {novosPedidosCount} {novosPedidosCount === 1 ? 'novo' : 'novos'}
+              </span>
+            ) : preparoPedidosCount > 0 ? (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                {preparoPedidosCount} preparo
+              </span>
+            ) : null}
           </button>
 
           {/* TAB 2: CARDÁPIO */}

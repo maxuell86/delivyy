@@ -38,7 +38,12 @@ service cloud.firestore {
     function isAuthorizedForStore(targetStoreId) {
       return isSuperAdminEmail() ||
         (isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
-          get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.storeId == targetStoreId);
+          (get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.storeId == targetStoreId ||
+           get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.storeId == 'all'));
+    }
+
+    function docStoreId(data) {
+      return ('storeId' in data && data.storeId is string && data.storeId.size() > 0) ? data.storeId : 'default';
     }
 
     function isValidStoreConfig(data) {
@@ -75,8 +80,8 @@ service cloud.firestore {
     // Collection 1: Store Configuration (isolated by configId / storeId)
     match /store_config/{configId} {
       allow get, list: if true;
-      allow create: if (isAuthorizedForStore(configId) || isAdmin()) && isValidStoreConfig(incoming());
-      allow update: if ((isAuthorizedForStore(configId) || isAdmin()) && isValidStoreConfig(incoming())) ||
+      allow create: if isAuthorizedForStore(configId) && isValidStoreConfig(incoming());
+      allow update: if (isAuthorizedForStore(configId) && isValidStoreConfig(incoming())) ||
         (isValidStoreConfig(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['avaliacoes', 'atualizadoEm']));
       allow delete: if isSuperAdminEmail();
     }
@@ -84,18 +89,19 @@ service cloud.firestore {
     // Collection 2: Products Menu (isolated by storeId)
     match /products/{productId} {
       allow get, list: if true;
-      allow create: if isAdmin() && isValidId(productId) && isValidProduct(incoming()) && incoming().id == productId;
-      allow update: if isAdmin() && isValidId(productId) && isValidProduct(incoming());
-      allow delete: if isAdmin() && isValidId(productId);
+      allow create: if isAuthorizedForStore(docStoreId(incoming())) && isValidId(productId) && isValidProduct(incoming()) && incoming().id == productId;
+      allow update: if (isAuthorizedForStore(docStoreId(existing())) && isAuthorizedForStore(docStoreId(incoming())) && isValidId(productId) && isValidProduct(incoming())) ||
+        (isValidId(productId) && isValidProduct(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['estoqueAtual', 'disponivel', 'atualizadoEm']));
+      allow delete: if isAuthorizedForStore(docStoreId(existing())) && isValidId(productId);
     }
 
     // Collection 3: Kitchen & Delivery Orders (isolated by storeId)
     match /orders/{orderId} {
       allow get, list: if true;
       allow create: if isValidId(orderId) && isValidOrder(incoming()) && incoming().id == orderId;
-      allow update: if isAdmin() && isValidId(orderId) && 
+      allow update: if isAuthorizedForStore(docStoreId(existing())) && isValidId(orderId) && 
         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'atualizadoEm', 'updatedAt']);
-      allow delete: if isAdmin() && isValidId(orderId);
+      allow delete: if isAuthorizedForStore(docStoreId(existing())) && isValidId(orderId);
     }
 
     // Collection 4: Admin Team Members & Store Bindings
