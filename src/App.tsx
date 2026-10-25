@@ -594,9 +594,27 @@ export default function App() {
     );
   }
 
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('omni_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleSidebarCollapse = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('omni_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
   return (
     <div className={`min-h-screen ${isDark ? 'bg-neutral-950 text-neutral-100' : 'bg-neutral-50 text-neutral-900'} flex flex-col font-sans transition-colors duration-200 selection:bg-orange-500 selection:text-white`}>
-      {/* Header */}
+      {/* Header + Desktop Collapsible Sidebar + Mobile Hamburger Drawer */}
       <Header
         storeConfig={storeConfig}
         currentSegmentConfig={currentSegmentConfig}
@@ -643,8 +661,16 @@ export default function App() {
               : 'Loja FECHADA temporariamente para novos pedidos.'
           );
         }}
+        isSidebarCollapsed={isSidebarCollapsed}
+        onToggleSidebarCollapse={handleToggleSidebarCollapse}
       />
 
+      {/* Content Wrapper shifted by Desktop Sidebar width */}
+      <div
+        className={`flex-1 flex flex-col transition-all duration-200 ${
+          isSidebarCollapsed ? 'lg:pl-[68px]' : 'lg:pl-64'
+        }`}
+      >
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Alerta caso o usuário tenha feito login com um e-mail que ainda não foi vinculado a nenhum estabelecimento */}
@@ -1224,6 +1250,7 @@ export default function App() {
           </div>
         </div>
       </footer>
+      </div>
 
       {/* PRODUCT ADD/EDIT MODAL */}
       <ProductModal
